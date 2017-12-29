@@ -511,18 +511,19 @@ def scoring3A_behavior(method="orig", verbose=False, weights=None, save=True, pc
     return res
 
 def scoring3A_behavior_all(verbose=True):
-    for method in ['pseudoV',
-                    'orig',
-                    'mcc',
-                    'pearson',
-                    'spearman',
-                    'aupr',
-                    'sqrt',
-                    'sym_pseudoV',
-                   ['pseudoV', 'mcc', 'pearson'],
-                   ['pseudoV', 'pearson', 'sym_pseudoV'],
-                   ['aupr', 'sqrt', 'sym_pseudoV'],
-                   ['aupr', 'sqrt', 'sym_pseudoV', 'pearson']]:
+    for method in [#'pseudoV',
+    #                'orig',
+    #                'mcc',
+    #                'pearson',
+    #                'spearman',
+    #                'aupr',
+    #                'sqrt',
+                    'js_divergence']:
+    #                'sym_pseudoV',
+    #               ['pseudoV', 'mcc', 'pearson'],
+    #               ['pseudoV', 'pearson', 'sym_pseudoV'],
+    #               ['aupr', 'sqrt', 'sym_pseudoV'],
+    #               ['aupr', 'sqrt', 'sym_pseudoV', 'pearson']]:
         for fm in [True, False]:
             for pc in ['none', 'less', 'more']:
                 for input in range(5):
@@ -694,7 +695,7 @@ def get_ccm(scenario, t_ccm=None, t_clusters=None, size_clusters=100, n_clusters
     :param return: (if scenario is 'Truth') the true co-clustering matrix and the clusters used to generate this matrix
                     (otherwise) the co-clustering matrix fro the given scenario
     '''
-
+    print(scenario)
     if t_clusters is None:
         t_clusters = np.zeros((n_clusters*size_clusters,n_clusters))
         for i in range(n_clusters):
@@ -718,21 +719,25 @@ def get_ccm(scenario, t_ccm=None, t_clusters=None, size_clusters=100, n_clusters
         clusters = np.zeros((n_clusters*size_clusters,n_clusters+1))
         clusters[:,:-1] = np.copy(t_clusters)
         if "SplitClusterBot" in scenario:
-            clusters[(n_clusters-0.5) * size_clusters:n_clusters*size_clusters,n_clusters-1] = 0
-            clusters[(n_clusters-0.5)*size_clusters:n_clusters*size_clusters,n_clusters] = 1
+            print((n_clusters-0.5) * size_clusters)
+            print(n_clusters*size_clusters,n_clusters-1)
+            clusters[int((n_clusters-0.5) * size_clusters):int(n_clusters*size_clusters),n_clusters-1] = 0
+            clusters[int((n_clusters-0.5)*size_clusters):int(n_clusters*size_clusters),n_clusters] = 1
             return np.dot(clusters, clusters.T)
             return np.dot(clusters, clusters.T)
         elif scenario is "SplitClusterMidOneChild":
-            clusters[2.5*size_clusters:3*size_clusters,2] = 0
-            clusters[2.5*size_clusters:3*size_clusters,n_clusters] = 1
+            clusters[int(2.5*size_clusters):int(3*size_clusters),2] = 0
+            clusters[int(2.5*size_clusters):int(3*size_clusters),n_clusters] = 1
             return np.dot(clusters, clusters.T)
         elif scenario is "SplitClusterMidMultiChild":
-            clusters[1.5*size_clusters:2*size_clusters,1] = 0
-            clusters[1.5*size_clusters:2*size_clusters,n_clusters] = 1
+            clusters[int(1.5*size_clusters):int(2*size_clusters),1] = 0
+            clusters[int(1.5*size_clusters):int(2*size_clusters),n_clusters] = 1
             return np.dot(clusters, clusters.T)
 
     elif scenario is "MergeClusterBot":
         clusters = np.copy(t_clusters[:,:-1])
+        print((n_clusters-1)*size_clusters)
+        print(n_clusters*size_clusters,n_clusters-2)
         clusters[(n_clusters-1)*size_clusters:n_clusters*size_clusters,n_clusters-2] = 1 #fix cluster 5 (originally cluster 6)
         clusters[(n_clusters-2)*size_clusters:(n_clusters-1)*size_clusters,n_clusters-2] = 0 #merge clusters 4 and 5 (from true phylogeny)
         clusters[(n_clusters-3)*size_clusters:(n_clusters-2)*size_clusters,n_clusters-3] = 1
@@ -787,24 +792,24 @@ def get_ad(scenario, t_ad=None, size_clusters=100, nssms=None):
         return t_ad
     elif scenario is "SplitClusterBotDiff":
         ad = np.copy(t_ad)
-        ad[5*size_clusters:5.5*size_clusters,5.5*size_clusters:6*size_clusters] = 1.
+        ad[int(5*size_clusters):int(5.5*size_clusters),int(5.5*size_clusters):int(6*size_clusters)] = 1.
         return ad
     elif scenario is "SplitClusterMidOneChild":
         ad = np.copy(t_ad)
-        ad[2.5*size_clusters:3*size_clusters,5*size_clusters:6*size_clusters] = 0
+        ad[int(2.5*size_clusters):int(3*size_clusters),5*size_clusters:int(6*size_clusters)] = 0
         return ad
     elif scenario is "SplitClusterMidMultiChild":
         ad = np.copy(t_ad)
-        ad[1.5*size_clusters:2*size_clusters,3*size_clusters:5*size_clusters] = 0
+        ad[int(1.5*size_clusters):int(2*size_clusters),3*size_clusters:int(5*size_clusters)] = 0
         return ad
     elif scenario == "MergeClusterMid&BotOneChild":
         ad = np.copy(t_ad)
-        ad[2*size_clusters:3*size_clusters, 5*size_clusters:6*size_clusters] = 0
+        ad[int(2*size_clusters):int(3*size_clusters), 5*size_clusters:int(6*size_clusters)] = 0
         return ad
     elif scenario == "MergeClusterMid&BotMultiChild":
         ad = np.copy(t_ad)
-        ad[size_clusters:2*size_clusters, 4*size_clusters:5*size_clusters] = 0
-        ad[4*size_clusters:5*size_clusters, 3*size_clusters:4*size_clusters] = 1
+        ad[int(size_clusters):int(2*size_clusters), int(4*size_clusters):int(5*size_clusters)] = 0
+        ad[int(4*size_clusters):int(5*size_clusters), int(3*size_clusters):int(4*size_clusters)] = 1
         return ad
     elif scenario == "MergeClusterTop&Mid":
         ad = np.zeros((6*size_clusters,6*size_clusters))
@@ -1046,38 +1051,41 @@ if __name__ == '__main__':
             "sym_pseudoV",
             "spearman",
             "pearson",
-            "aupr",
+            "js_divergence",
+			"aupr",
             "mcc",
             "default"],
         '3': ['pseudoV',
               'sym_pseudoV',
               'pearson',
               'aupr',
+              'js_divergence',			  
               'sqrt',
               'mcc',
               'orig']
     }
     for m in methods['1A']:
         print 'Scoring 1A Behavior with method ' + m + '...'
-        scoring1A_behavior(m)
+     #   scoring1A_behavior(m)
 
     for m in methods['1B']:
         print 'Scoring 1B Behavior with method ' + m + '...'
-        scoring1B_behavior(m)
+#        scoring1B_behavior(m)
 
     for m in methods['1C']:
         print 'Scoring 1C Behavior with method ' + m + '...'
-        scoring1C_behavior(m)
+#        scoring1C_behavior(m)
     for m in methods['2']:
         print 'Scoring 2A Behavior with method ' + m + '...'
-        scoring2A_behavior(method=m, verbose=True, tst_closest_reassign=False, tst_big_mat=True, tst_rand_reassign=False)
+#        scoring2A_behavior(method=m, verbose=True, tst_closest_reassign=False, tst_big_mat=True, tst_rand_reassign=False)
+
         print 'Scoring 2B Behavior with method ' + m + '...'
-        scoring2B_behavior(method=m, verbose=True, tst_betas=True, tst_prob_mod_err=True, tst_prob_mod=True)
+#        scoring2B_behavior(method=m, verbose=True, tst_betas=True, tst_prob_mod_err=True, tst_prob_mod=True)
 
-
+#    scoring2A_behavior(method='pearson', verbose=True, tst_closest_reassign=False, tst_big_mat=True, tst_rand_reassign=False)
     print 'Scoring 3A Behavior...'
     scoring3A_behavior_all(verbose=True)
     scoring3A_behavior(method="mcc", verbose=True,pc_amount="none", full_matrix=False, in_mat=1)
 
     print 'Scoring 3A Behavior using multiple metrics with different weights...'
-    scoring3A_weight_behavior(verbose=True)
+#    scoring3A_weight_behavior(verbose=True)

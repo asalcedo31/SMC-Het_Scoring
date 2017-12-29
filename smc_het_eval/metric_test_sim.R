@@ -8,10 +8,10 @@
 #library(BoutrosLab.plotting.general)
 #library(BoutrosLab.statistics.classification)
 library(pROC)
-script.dir <- dirname(sys.frame(1)$ofile)
+#script.dir <- dirname(sys.frame(1)$ofile)
 plots.dir <- './scoring_metric_data/sim_plots/'
 text.dir <- './scoring_metric_data/sim_text/'
-setwd(script.dir)
+#setwd(script.dir)
 
 
 #### SIMULATION PARAMETERS ####################################
@@ -55,23 +55,32 @@ sim.params = c("K.u", "K.n", "epsilon1", "epsilon2")
 # class.elem - vector of length K.u where the i'th entry is
 #       the number of elements of the class in question that are
 #       in the i'th useful cluster
-assign.useful <- function(class.pairs){
+assign.useful <- function(class.pairs,nC.u){
   # number of elements in each class that are incorrectly assigned 
   # to the wrong useful cluster
-  num.class.incorr <- floor(n.C * (epsilon1))
+#  browser()
+#  print(nC.u)
+  num.class.incorr <- round(nC.u * (epsilon1))
   num.clust.unpair <- sum(1 - class.pairs) # number of clusters not paired with this class
   
-  num.class.corr <- n.C * (1 - epsilon) # number of elements in each class that are correctly assigned
+  num.class.corr <- nC.u -num.class.incorr # number of elements in each class that are correctly assigned
   num.clust.pair <- sum(class.pairs) # number of clusters paired with this class
   print(paste("In Correct Class", num.class.corr, "Paired Classes", num.clust.pair))
-  
+#  browser()
   corr.elems <- ifelse(num.clust.pair == 0, 0, floor(num.class.corr / num.clust.pair))
   incorr.elems <- ifelse(num.clust.unpair == 0, 0, floor(num.class.incorr / num.clust.unpair))
-  
-  
-  class.elem <- (class.pairs * corr.elems) + # correctly assigned elements
-    ((1 - class.pairs) * incorr.elems) # incorrectly assigned elements
-  
+#  print(corr.elems)
+
+#  class.elem <- (class.pairs * corr.elems) + # correctly assigned elements
+#    ((1 - class.pairs) * incorr.elems) # incorrectly assigned elements
+  if (num.class.incorr >0){
+  incorr.rand <- rmultinom(1,num.class.incorr,prob=(1-class.pairs)/num.clust.unpair)
+
+  class.elem <- (class.pairs * corr.elems) +  incorr.rand
+  }
+  else {
+	  class.elem <- (class.pairs * corr.elems) }
+#  print(class.elem)
   toassign.corr = ifelse(num.clust.pair == 0, 0, num.class.corr %% num.clust.pair)
   toassign.incorr = ifelse(num.clust.unpair == 0, 0, num.class.incorr %% num.clust.unpair)
   # start looking at a random index so that the extra elements are
@@ -83,7 +92,7 @@ assign.useful <- function(class.pairs){
       class.elem[index] <- class.elem[index] + 1
       toassign.corr <- toassign.corr - 1
     } else if(!class.pairs[index] && toassign.incorr){
-      class.elem[index] <- class.elem[index] + 1
+#      class.elem[index] <- class.elem[index] + 1
       toassign.incorr <- toassign.incorr - 1
     }
     index <- (index %% K.u) + 1
@@ -98,16 +107,18 @@ assign.useful <- function(class.pairs){
 # class.elem - matrix of size (K.n x C) where the (i,j)'th 
 #       entry is the number of elements of the j'th class 
 #       that are in the i'th noise cluster
-assign.noise <- function(){
+assign.noise <- function(nC.n){
   # number of elements in each class that are incorrectly assigned 
   # to a noise cluster
-  num.class.incorr <- n.C * (epsilon2) 
+  num.class.incorr <- nC.n  
+#  browser()  
+   class.elem <- rmultinom(C, nC.n ,prob = rep(1/K.n, K.n))
+#  class.elem <- matrix(rmultinom(1, floor(n.C * epsilon2 )*C,prob = rep(1/K.n, K.n*C)),nrow=K.n, ncol=C)	
+#  class.elem <- matrix(rep(floor(n.C * epsilon2 / K.n), K.n * C), 
+#                       nrow = K.n,
+#                       ncol = C)
   
-  class.elem <- matrix(rep(floor(n.C * epsilon2 / K.n), K.n * C), 
-                       nrow = K.n,
-                       ncol = C)
-  
-  toassign = (n.C * epsilon2) %% K.n
+  toassign = (nC.n * epsilon2) %% K.n
   class.elem <- apply(class.elem, 2, assign.noise.help, toassign=toassign)
   return(class.elem)
 }
@@ -144,14 +155,15 @@ assign.noise.help <- function(class.elem, toassign){
 # OUTPUT (list of values):
 #     ccm.t - the true (classes) co-clustering matrix
 #     ccm.p - the predicted (clusters) co-clustering matrix
-get.ccm <- function(data){
+get.ccm <- function(data,case=NULL){
   k <- dim(data)[[1]]
   c <- dim(data)[[2]]
   n.c <- apply(data, 2, sum) # number of elements in each class, could be slightly different due to rounding
   ccm.t <- ccm.p <- data.frame(matrix(0,nrow=sum(data),ncol=sum(data)))
   
   # Assign values to ccm.t
-  for(i in 1:c){
+  ccm.t[1:sum(n.c[1]),1:sum(n.c[1])] <- 1
+  for(i in 2:c){
     ccm.t[(sum(n.c[1:(i-1)])+1):sum(n.c[1:i]),(sum(n.c[1:(i-1)])+1):sum(n.c[1:i])] <- 1
   }
   
@@ -159,7 +171,9 @@ get.ccm <- function(data){
   # Need to figure out which elements belong to which clusters
   # By default, elements in K1 from a given class are the first
   # elements in the matrix from that class, K2 are next, etc.
-  for(i in 1:k){
+  print(is.null(case))
+  if (is.null(case)){
+    for(i in 1:k){
     # vector of indices for elements in the cluster
     k.elem <- c()
     for(j in 1:c){ # class index
@@ -182,7 +196,12 @@ get.ccm <- function(data){
     }
     ccm.p[k.elem,k.elem] <- 1
   }
-  
+  } else  if (case == 'all'){
+    ccm.p <- data.frame(matrix(1,ncol=ncol(ccm.t),nrow=nrow(ccm.t)))
+  }  else if (case == 'each'){
+    ccm.p <- data.frame(matrix(0,ncol=ncol(ccm.t),nrow=nrow(ccm.t)))
+    diag(ccm.p) <- 1
+  } 
   return(list(ccm.t=ccm.t, ccm.p=ccm.p))
 }
 
@@ -385,7 +404,7 @@ create.data <- function(n.iter.value = NULL, #why is this here...
   }
   if(!is.null(e1.value)){
     epsilon1 <<- e1.value
-    epsilon <<- epsilon1 + epsilon2
+ #   epsilon <<- epsilon1 + epsilon2
   }
   if(!is.null(e2.value)){
     epsilon2 <<- e2.value
@@ -443,14 +462,65 @@ create.data <- function(n.iter.value = NULL, #why is this here...
   )
   )
   # Elements assigned to useful clusters
-  clusters.elem[1:K.u,] <- apply(kc.pairs, 2, assign.useful)
+  nC.u <- round(n.C-n.C*epsilon2)
+  nC.n <- n.C - nC.u
+  clusters.elem[1:K.u,] <- apply(kc.pairs, 2, assign.useful,nC.u)
+
   # Elements assigned to noise clusters
   if(K.n > 0){
-    clusters.elem[(K.u+1):(K.u+K.n),] <- assign.noise()
+    clusters.elem[(K.u+1):(K.u+K.n),] <- assign.noise(nC.n)
   }
+  print(clusters.elem)
   return(clusters.elem)
 }
+se <- function(x){
+  return(sd(x)/sqrt(length(x)))
+}
 
+read.sim <- function(C.values = 4:5,
+                    K.u.values=7:10,
+                    K.n.values=0:1,
+                    e1.values=c(0,0.033,0.066,0.1),
+                    e2.values=c(0,0.066,0.133,0.2),
+                    n.iter = 1,
+                    directory = text.dir
+
+                    ){
+  res <- list()
+  for(c in C.values){
+    C <<- c
+    res <- lapply(K.u.values,
+                  function(k.u){
+                    res2 <- lapply(K.n.values,
+                           function(k.n){
+                             res3 <- lapply(e1.values,
+                                    function(e1){
+                                      res4 <- lapply(e2.values,
+                                             function(e2){
+                                               #print.sim()
+												 sim.res.tot <- read.csv(paste(directory,
+			                                    'simres_C=', C,
+            			                        '_nC=', n.C,
+                        			            '_ku=', k.u,
+                            			        '_kn=', k.n,
+                           				        '_e1=', e1,
+                                				'_e2=', e2, '.tsv', sep=""), header=T)
+										;
+										return(apply(data.frame(sim.res.tot), 2, function(x) return(c(mean(x)))))})
+									names(res4) <- e2.values
+                                      res4
+                                    })
+			                     
+                             names(res3) <- e1.values
+                             res3
+                           })
+                    names(res2) <- K.n.values
+                    res2
+                  })
+    names(res) <- K.u.values
+  }
+  return(res)
+}
 
 #### run.sim ####################################################
 # Run the simulation over the given parameter values
@@ -472,6 +542,7 @@ run.sim <- function(C.values = 4:5,
                     K.n.values=0:1, 
                     e1.values=c(0,0.033,0.066,0.1), 
                     e2.values=c(0,0.066,0.133,0.2),
+					n.iter = 1,
                     directory = text.dir
                     ){
   res <- list()
@@ -488,7 +559,8 @@ run.sim <- function(C.values = 4:5,
                                                #print.sim()
                                                sim.res.tot <- sapply(1:n.iter, 
                                                                      function(x){
-                                                                       print(get.param.str())
+                                                                       print(paste("iter",x))
+																	   print(get.param.str())
                                                                        data <- create.data(,,,k.u,k.n,e1,e2)
                                                                        eval <- evaluate(data)
                                                                        print("...Complete")
@@ -538,21 +610,53 @@ run.sim <- function(C.values = 4:5,
 #     assignment using that metric
 evaluate <- function(data, title=""){
   # calculate each of the desired metrics for the given simulation data
-  pv <- pseudo.v.metric(data,0.01)# pseudoV and symmetric pseudoV measures
-  sim.res <- c("Combinatorial.Equal.Weight" = combinatorial.metric(1,1,data), 
-               "Combinatorial.Unequal.Weight" = combinatorial.metric(2,1,data), 
-               "Pseudo.V" = 1 - (pv$normal / 4000), # scale these so that they can be compared to other metrics
-               "Pseudo.V.Sym" = 1 - (pv$sym / 4000),
+ # pv <- pseudo.v.metric(data,1e-50)# pseudoV and symmetric pseudoV measures
+  # sim.res <- c("Combinatorial.Equal.Weight" = combinatorial.metric(1,1,data), 
+  #              "Combinatorial.Unequal.Weight" = combinatorial.metric(2,1,data), 
+  #              "Pseudo.V" = 1 - (pv$normal / 4000), # scale these so that they can be compared to other metrics
+  #              "Pseudo.V.Sym" = 1 - (pv$sym / 4000),
+  #              "MCC" = mcc.metric(data),
+  #              "Pearson" = pearson.metric(data),
+  #              "Spearman" = spearman.metric(data),
+  #              "AUPR" = aupr.metric(data),
+  #              "2A.metric" = mean(1 - (pv$normal / 4000),pearson.metric(data), spearman.metric(data)),
+  #              "Sqrt" = sqrt.metric(data))
+  pv <- pseudo.v.metric(data,1e-50)# pseudoV and symmetric pseudoV measures
+  pv.all <- pseudo.v.metric(data,1e-50,case='all')
+  pv.each <- pseudo.v.metric(data,1e-50,case='each')
+
+  sim.res <- c(
+              "Pseudo.V" = pv$normal,
                "MCC" = mcc.metric(data),
                "Pearson" = pearson.metric(data),
-               "Spearman" = spearman.metric(data),
-               "AUPR" = aupr.metric(data),
-               "Sqrt" = sqrt.metric(data))
-  
+               "AUPR" = aupr.metric(data)
+              )
+  sim.all <- c(
+              "Pseudo.V" = pv.all$normal,
+               "MCC" = mcc.metric(data,'all'),
+               "Pearson" = pearson.metric(data,'all'),
+               "AUPR" = aupr.metric(data,'all')
+              )
+  sim.each <- c(
+              "Pseudo.V" = pv.each$normal,
+               "MCC" = mcc.metric(data,'each'),
+               "Pearson" = pearson.metric(data,'each'),
+               "AUPR" = aupr.metric(data,'each')
+              )
+  sim.norm <- sapply(seq_along(sim.res), function(x) {res = sim.res[x];
+                                                      all = sim.all[x];
+                                                      each = sim.each[x];
+                                                      if(names(res)=="Pseudo.V"){
+                                                        return(1-(res/max(c(all,each))))
+                                                      } else{
+                                                        return((res-min(c(all,each)))/(1-min(c(all,each))))
+                                                      }
+                                                      })
+  sim.norm["2A_metric"] <-mean(sim.norm[1:3])
   if(title != ""){
     sim.res <- c(c("Name" = title), sim.res)
   }
-  return(sim.res)
+  return(sim.norm)
 }
 
 #### DATA OUTPUT/ANALYSIS ###################################
@@ -653,11 +757,10 @@ parse.data <- function(res, params.fixed.values, metrics=NA){
   param.ind <- match(NA, params.fixed.values)
     
   if(length(param.ind) > 1){
-    stop("Too many parameter values are unspecified. Enter more parameters and try again")
+  #  stop("Too many parameter values are unspecified. Enter more parameters and try again")
   }
   # name of the unfixed parameter
   param.name <- names(params.fixed.values)[param.ind]
-
   # get the results we care about
   res <- filter.data(res, 
                     params.fixed.values[1], 
@@ -682,6 +785,7 @@ parse.data <- function(res, params.fixed.values, metrics=NA){
   # will be populated later
   param.data <- data.frame(matrix(nrow=length(metrics)*length(param.values),
                                   ncol=3))
+ 
   for(i in 1:length(param.values)){
     val <- param.values[[i]]
     params.values <- params.fixed.values
@@ -696,6 +800,75 @@ parse.data <- function(res, params.fixed.values, metrics=NA){
   param.data[,'value'] <- as.numeric(param.data[,'value'])
   
   return(param.data)
+}
+
+
+
+#### parse.data ############################################
+# Parse simulation results to extract the data in a usable
+# form for a scatterplot. 
+#
+# INPUT:
+#    res - simulation results
+#    params.fixed.values - vector of length 4 of parameter values that 
+#       are kept fixed throughout the simulation. Any parameters 
+#       that are set to be NA will be iterated over (at most one 
+#       parameter can be NA at a time).
+#       Ordering of parameters: K.u, K.n, epsilon1, epsilon2
+#    metrics - Optional vector of names of metrics to include in
+#       the plot. If not included then all metrics are considered
+# OUTPUT:
+#    param.data - data frame containing the simulation results
+#        where all but on of the parameters are fixed
+
+parse.data.means <- function(res, params.fixed.values, param.interest, metrics=NA){
+  # set names for easier access
+  names(params.fixed.values) <- c("K.u", "K.n", "epsilon1", "epsilon2")
+  # index of the unfixed parameter
+      
+  if(length(param.interest) > 1){
+  #  stop("Too many parameter values are unspecified. Enter more parameters and try again")
+  }
+  # name of the unfixed parameter
+  # get the results we care about
+  res <- filter.data(res, 
+                    params.fixed.values[1], 
+                    params.fixed.values[2], 
+                    params.fixed.values[3], 
+                    params.fixed.values[4])
+  
+  # values for the unfixed parameter
+  param.values <- switch(toString(param.interest),
+                         '1' = names(res),
+                         '2' = names(res[[1]]),
+                         '3' = names(res[[1]][[1]]),
+                         '4' = names(res[[1]][[1]][[1]])
+  )
+  
+  # names of the different metrics being considered
+  if(is.na(metrics)){
+
+    metrics <- names(res[[1]][[1]][[1]][[1]])
+  }
+  all.df <- ldply(names(res),function(ku) ldply(names(res[[1]]),function(kn)ldply(names(res[[1]][[1]]), function(e1) ldply(names(res[[1]][[1]][[1]]), function(e2) {df <- ldply(res[[ku]][[kn]][[e1]][[e2]]); df$K.u <- rep(ku,nrow(df)); df$K.n <-rep(kn,nrow(df)); df$epsilon1 <-rep(e1,nrow(df));df$epsilon2 <-rep(e2,nrow(df)); df}))))
+  # data frame for the ploting data
+  # will be populated later
+  param.data <- data.frame(matrix(nrow=length(metrics)*length(param.values),
+                                  ncol=3))
+  if(param.interest == "K.u"){
+    res.means <- ddply(all.df[all.df$.id %in% metrics,],.(K.u,.id), summarize, mean=mean(V1),se=se(V1))
+  } else   if(param.interest == "epsilon1"){
+    res.means <- ddply(all.df[all.df$.id %in% metrics,],.(epsilon1,.id), summarize, mean=mean(V1),se=se(V1))
+  } else   if(param.interest == "epsilon2"){
+    res.means <- ddply(all.df[all.df$.id %in% metrics,],.(epsilon2,.id), summarize, mean=mean(V1),se=se(V1))
+  }
+ 
+  res.means <- res.means[,c(1,3,4,2)]
+  res.means$se[is.na(res.means$se)] <- 0
+  names(res.means) <- c(param.interest,'mean','se','metric')
+
+  
+  return(res.means)
 }
 
 #### parse.data.diff ##########################################
@@ -779,7 +952,7 @@ test.properties <- function(prop=1, metric=NULL, ...){
 #                 predicted clusters increases if the number of predicted
 #                 clusters is less than the true number of clusters
 # 
-test.p1 <- function(metric=NULL,
+test.p1 <- function(metrics=NULL,
                     C.values = 4:7,
                     K.u.values=2:10, 
                     K.n.values=1:0, 
@@ -791,12 +964,15 @@ test.p1 <- function(metric=NULL,
   count.metrics <- NULL
   res <- data.frame(matrix(nrow=0, ncol=3))
   
-  for(C in C.values){
-    K.u.values.less <- K.u.values[K.u.values <= C]
-    count.tot <- count.tot + (length(e1.values) * length(e2.values) * length(K.n.values) * (length(K.u.values.less)) * (length(K.u.values.less) - 1) / 2)
-    for(e1 in e1.values){ # for each parameter setting, not including K.u
+
+   for(e1 in e1.values){ # for each parameter setting, not including K.u
       for(e2 in e2.values){
         for(k.n in K.n.values){
+          for (metric in metrics){
+          total <- 0
+          count.metrics <- 0
+          for(C in C.values){
+          K.u.values.less <- K.u.values[K.u.values <= C]
           for(k.u.1 in K.u.values.less){ # for all K.u values <= C
             for(k.u.2 in K.u.values.less[K.u.values.less > k.u.1]){ # and for all 'jump' sizes <= (C - k.u.1)          
               d.1 <- read.csv(paste(directory,
@@ -813,42 +989,130 @@ test.p1 <- function(metric=NULL,
                                     '_kn=', k.n, 
                                     '_e1=', e1, 
                                     '_e2=', e2, '.tsv', sep=""), header=T)
-              if(!is.null(metric)){ # look at only the metrics specified
-                d.1 <- d.1[metric]
-                d.2 <- d.2[metric]
+              print(c("Ku1",C,k.u.1,k.n,e1,e2))
+			  print(c("Ku2",k.u.2))
+			  if(!is.null(metric)){ # look at only the metrics specified
+                d.1 <- d.1[,metric]
+                d.2 <- d.2[,metric]
               }
-              diff <- d.2 - d.1 # difference in the metric scores between the two parameter settings
-              if(is.null(count.metrics)){ # setup to track the number of parameter settings that satisfy P1 if it hasn't been done already
-                count.metrics <- rep(0, length(diff))
-              }
-              if(is.null(res)){ # setup the results data frame if it hasn't been already
+  			        if(is.null(res)){ # setup the results data frame if it hasn't been already
                 res <- data.frame(matrix(nrow=0, ncol=length(diff)))
               }
-              count.metrics <- count.metrics + (diff > 0)
-              #               if(sum(diff <= 0) > 1){
-              #                 print(paste('C:', C, 'Kn:', k.n, 'Ku1:', k.u.1, 'Ku2:', k.u.2, 'eps1:', e1, 'eps2', e2))
-              #                 print(diff)
-              #               }
-            }
+              for (d in d.1){
+                    count.metrics <- count.metrics + length(d.2[d.2>d])
+                total <- total +25
+                }
+             }
           }
-          #print(t(count.metrics / ((length(K.u.values.less)) * (length(K.u.values.less) - 1) / 2)))
-          res <- rbind(res, data.frame(
-            Proportion = t(count.metrics / ((length(K.u.values.less)) * (length(K.u.values.less) - 1) / 2)),
-            Metric = names(diff),
-            Property = 1))
-          count.metrics <- NULL
         }
+          res <- rbind(res, data.frame(
+            Proportion=count.metrics/total,
+             Metric = metric,
+            Property = 1))
+          
+        print(c(count.metrics,total))
+       }
       }
     }
   }
   return(res)
 }
 
+
+
+test.p2 <- function(metrics=NULL,
+                    C.values = 4:7,
+                    K.u.values=2:10, 
+                    K.n.values=1:0, 
+                    e1.values=c(0,0.033,0.066,0.1), 
+                    e2.values=c(0,0.066,0.133,0.2),
+                    directory = text.dir){
+  # number of parameter settings being considered
+  count.tot <- 0
+  count.metrics <- NULL
+  res <- data.frame(matrix(nrow=0, ncol=3))
+  
+
+#   print(K.u.values.less)
+  #  count.tot <- count.tot + (length(e1.values) * length(e2.values) * length(K.n.values) * (length(K.u.values.less)) * (length(K.u.values.less) - 1) / 2)
+    for(e1 in e1.values){ # for each parameter setting, not including K.u
+      for(e2 in e2.values){
+        for(k.n in K.n.values){
+          for (metric in metrics){
+          total <- 0
+          count.metrics <- 0
+          for(C in C.values){
+          K.u.values.more <- K.u.values[K.u.values >= C]
+          for(k.u.1 in K.u.values.more){ # for all K.u values <= C
+            for(k.u.2 in K.u.values.more[K.u.values.more > k.u.1]){ # and for all 'jump' sizes <= (C - k.u.1)          
+              d.1 <- read.csv(paste(directory,
+                                    'simres_C=', C, 
+                                    '_nC=', n.C,
+                                    '_ku=', k.u.1, 
+                                    '_kn=', k.n, 
+                                    '_e1=', e1, 
+                                    '_e2=', e2, '.tsv', sep=""), header=T)
+              d.2 <- read.csv(paste(directory,  
+                                    'simres_C=', C, 
+                                    '_nC=', n.C,
+                                    '_ku=', k.u.2, 
+                                    '_kn=', k.n, 
+                                    '_e1=', e1, 
+                                    '_e2=', e2, '.tsv', sep=""), header=T)
+              print(c("Ku1",C,k.u.1,k.n,e1,e2))
+      #  print(d.1)
+        print(c("Ku2",k.u.2))
+  #     print(d.2)
+     #   browser()
+        if(!is.null(metric)){ # look at only the metrics specified
+                d.1 <- d.1[,metric]
+                d.2 <- d.2[,metric]
+              }
+         #     print("dim")
+         #     print(length(d.1))
+           #  print(c("diff",d.1,d.2,diff))
+              if(is.null(res)){ # setup the results data frame if it hasn't been already
+                res <- data.frame(matrix(nrow=0, ncol=length(diff)))
+              }
+              for (d in d.1){
+              #  diff <- d.2 - d # difference in the metric scores between the two parameter settings
+                count.metrics <- count.metrics + length(d.2[d.2<d])
+                total <- total +25
+            #    print("total")
+       #         print(total)
+              }
+              #               if(sum(diff <= 0) > 1){
+              #                 print(paste('C:', C, 'Kn:', k.n, 'Ku1:', k.u.1, 'Ku2:', k.u.2, 'eps1:', e1, 'eps2', e2))
+              #                 print(diff)
+              #               }
+            }
+          }
+        }
+   #     print(c(count.metrics,total))
+          #print(t(count.metrics / ((length(K.u.values.less)) * (length(K.u.values.less) - 1) / 2)))
+          res <- rbind(res, data.frame(
+            Proportion=count.metrics/total,
+          #  Proportion = t(count.metrics / ((length(K.u.values.less)) * (length(K.u.values.less) - 1) / 2)),
+            Metric = metric,
+            Property = 2))
+          
+   #     }
+       print(c(count.metrics,total))
+       }
+      }
+    }
+  }
+  return(res)
+}
+
+
+
+
 # Test property 2 - the metric score gets worse as the number of
 #                 predicted clusters increases if the number of predicted
 #                 clusters is greater than the true number of clusters
 # 
-test.p2 <- function(metric=NULL,
+test.p2.old <- function(metric=NULL,
                     C.values = 4:7,
                     K.u.values=2:10, 
                     K.n.values=0:1, 
@@ -913,9 +1177,75 @@ test.p2 <- function(metric=NULL,
   return(res)
 }
 
+test.p3 <- function(metrics=NULL,
+                    C.values = 4:7,
+                    K.u.values=2:10, 
+                    K.n.values=1:0, 
+                    e1.values=c(0,0.033,0.066,0.1), 
+                    e2.values=c(0,0.066,0.133,0.2),
+                    directory = text.dir){
+  # number of parameter settings being considered
+  count.tot <- 0
+  count.metrics <- NULL
+  res <- data.frame(matrix(nrow=0, ncol=3))
+  
+
+   for(C in C.values){ # for each parameter setting, not including K.u
+      for(e2 in e2.values){
+        for(k.n in K.n.values){
+          for (metric in metrics){
+          total <- 0
+          count.metrics <- 0
+          for(k.u in K.u.values){
+           for(e1.1 in e1.values){ # for all K.u values <= C
+            for(e1.2 in e1.values[e1.values > e1.1]){ # and for all 'jump' sizes <= (C - k.u.1)          
+              d.1 <- read.csv(paste(directory,
+                                    'simres_C=', C, 
+                                    '_nC=', n.C,
+                                    '_ku=', k.u, 
+                                    '_kn=', k.n, 
+                                    '_e1=', e1.1, 
+                                    '_e2=', e2, '.tsv', sep=""), header=T)
+              d.2 <- read.csv(paste(directory,  
+                                    'simres_C=', C, 
+                                    '_nC=', n.C,
+                                    '_ku=', k.u, 
+                                    '_kn=', k.n, 
+                                    '_e1=', e1.2, 
+                                    '_e2=', e2, '.tsv', sep=""), header=T)
+        if(!is.null(metric)){ # look at only the metrics specified
+                d.1 <- d.1[,metric]
+                d.2 <- d.2[,metric]
+              }
+                if(is.null(res)){ # setup the results data frame if it hasn't been already
+                res <- data.frame(matrix(nrow=0, ncol=length(diff)))
+              }
+              for (d in d.1){
+                    count.metrics <- count.metrics + length(d.2[d.2<d])
+                total <- total +25
+                }
+             }
+          }
+        }
+          res <- rbind(res, data.frame(
+            Proportion=count.metrics/total,
+             Metric = metric,
+            Property = 3))
+          
+        print(c(count.metrics,total))
+       }
+      }
+    }
+  }
+  return(res)
+}
+
+
+
+
 # Test property 3 - the metric score gets worse as epsilon1 (the proportion of
 #             items assigned to an incorrect useful cluster) increases
-test.p3 <- function(metric=NULL,
+test.p3.old <- function(metric=NULL,
                     C.values = 4:7,
                     K.u.values=2:10,  
                     K.n.values=0:1, 
@@ -974,9 +1304,84 @@ test.p3 <- function(metric=NULL,
   return(res)
 }
 
+
+test.p4 <- function(metrics=NULL,
+                    C.values = 4:7,
+                    K.u.values=2:10, 
+                    K.n.values=1:0, 
+                    e1.values=c(0,0.033,0.066,0.1), 
+                    e2.values=c(0,0.066,0.133,0.2),
+                    directory = text.dir){
+  # number of parameter settings being considered
+  count.tot <- 0
+  count.metrics <- NULL
+  res <- data.frame(matrix(nrow=0, ncol=3))
+  
+  total <- 0
+  count.metrics <- 0
+   for(C in C.values){ # for each parameter setting, not including K.u
+      for(e1 in e1.values){
+        for(k.u in K.u.values){
+          for (metric in metrics){
+          
+          for(k.n in K.n.values){
+           for(e2.1 in e2.values){ # for all K.u values <= C
+            for(e2.2 in e2.values[e2.values > e2.1]){ # and for all 'jump' sizes <= (C - k.u.1)          
+              d.1 <- read.csv(paste(directory,
+                                    'simres_C=', C, 
+                                    '_nC=', n.C,
+                                    '_ku=', k.u, 
+                                    '_kn=', k.n, 
+                                    '_e1=', e1, 
+                                    '_e2=', e2.1, '.tsv', sep=""), header=T)
+              d.2 <- read.csv(paste(directory,  
+                                    'simres_C=', C, 
+                                    '_nC=', n.C,
+                                    '_ku=', k.u, 
+                                    '_kn=', k.n, 
+                                    '_e1=', e1, 
+                                    '_e2=', e2.2, '.tsv', sep=""), header=T)
+        if(!is.null(metric)){ # look at only the metrics specified
+                d.1 <- d.1[,metric]
+                d.2 <- d.2[,metric]
+              }
+                if(is.null(res)){ # setup the results data frame if it hasn't been already
+                res <- data.frame(matrix(nrow=0, ncol=length(diff)))
+              }
+              for (d in d.1){
+                  if(k.n == 0){
+                    count.metrics <- count.metrics + length(d.2[d.2-d<0.005])
+                    if (length(d.2[d.2-d<0.005]) <25){
+                 #   print(c(k.n,e2.1,e2.2))
+                 }# if the difference is 0 and there are 0 noise clusters then P4 is satisfied
+                  }
+              else{
+                    count.metrics <- count.metrics + length(d.2[d.2<d])
+                     if (length(d.2[d.2<d]) <25){
+                  #  print(c(k.n,e2.1,e2.2))
+                }
+                  }
+                total <- total +25
+                }
+             }
+          }
+        }
+          res <- rbind(res, data.frame(
+            Proportion=count.metrics/total,
+             Metric = metric,
+            Property = 4))
+          
+        print(c(count.metrics,total))
+       }
+      }
+    }
+  }
+  return(res)
+}
+
 # Test property 4 - the metric score gets worse as epsilon2 (the proportion of
 #             items assigned to an incorrect noise cluster) increases
-test.p4 <- function(metric=NULL,
+test.p4.old <- function(metric=NULL,
                     C.values = 4:7,
                     K.u.values=2:10, 
                     K.n.values=0:1, 
@@ -1064,7 +1469,7 @@ test.p4 <- function(metric=NULL,
 #       otherwise plot the metric scores themselves  
 # OUTPUT:
 #    plot - plot of the given data
-plot.sim <- function(res, params.fixed.values, metrics=NA, diff=FALSE, filename=NULL){
+plot.sim <- function(res, params.fixed.values,param.interest, metrics=NA, diff=FALSE, filename=NULL,print.legend=TRUE){
   # get the data for plotting
   if(diff){
     plot.data <- parse.data.diff(res, params.fixed.values, metrics)
@@ -1081,8 +1486,7 @@ plot.sim <- function(res, params.fixed.values, metrics=NA, diff=FALSE, filename=
                    "on Changes in Scoring Metric Value")
     xrot <- 45 # rotation of xaxis labels
   } else{
-    plot.data <- parse.data(res, params.fixed.values, metrics)
-      
+    plot.data <- parse.data.means(res, params.fixed.values, param.interest, metrics)
     param.formula <- paste("factor(", names(plot.data)[[1]],")", sep="")
     ylab <- "Metric Score"
     param.name <- names(plot.data)[[1]] # name of parameter being changed
@@ -1091,7 +1495,7 @@ plot.sim <- function(res, params.fixed.values, metrics=NA, diff=FALSE, filename=
                    "on Scoring Metric")
     xrot <- 0 # rotation of xaxis labels
   }
-  
+  #browser()
   print("Assigned data...")
   # name of the parameter that is not being held fixed and
   # the metrics that are being considered
@@ -1102,11 +1506,11 @@ plot.sim <- function(res, params.fixed.values, metrics=NA, diff=FALSE, filename=
   }
   
   # formula for scatter plot
-  plot.formula <- as.formula(paste("value ~", param.formula))
+  plot.formula <- as.formula(paste("mean ~", param.formula))
   print("Calculated formula...")
   
   # details of simulation for plot
-  metrics <- sort(unique(plot.data[,3]), decreasing=F)
+  metrics <- sort(unique(plot.data[,4]), decreasing=F)
   if(output){
     print(metrics)
   }
@@ -1133,7 +1537,7 @@ plot.sim <- function(res, params.fixed.values, metrics=NA, diff=FALSE, filename=
   # assign graphical values
   p.pch <- 19
   p.colours <- default.colours(length(metrics))
-  p.cex = 1
+  p.cex = 0.6
   
   # create legend
   metric.legend <- list(
@@ -1141,7 +1545,7 @@ plot.sim <- function(res, params.fixed.values, metrics=NA, diff=FALSE, filename=
       pch = p.pch,
       cex = p.cex,
       colours = p.colours,
-      labels = metrics,
+      labels = gsub('.',' ', metrics),
       title = 'Metrics',
       border = 'transparent'
     ),
@@ -1154,16 +1558,16 @@ plot.sim <- function(res, params.fixed.values, metrics=NA, diff=FALSE, filename=
       border = 'transparent'
       )
   );
-  
+  lab = gsub('\\.',' ', metrics)
   metric.key = list(
     text = list(
-      lab = metrics,
-      cex = 1,
+      lab = c("AUPR","Pearson/MCC","Pseudo V","2A score"),
+      cex = 0.6,
       col = 'black'
       ),
     points = list(
       pch = p.pch,
-      col = p.colours,
+      col = p.colours[c(1,3,4,5)],
       cex = p.cex
       ),
     x = 0.04,
@@ -1179,28 +1583,64 @@ plot.sim <- function(res, params.fixed.values, metrics=NA, diff=FALSE, filename=
   if(diff){
     
   }
-  
+  legend.print=NULL
+  abline.v=NULL
+  if(param.name=='K.u'){
+    abline.v = 3
+    xat = TRUE
+    label = 'Number of clusters'
+  }
+  if(param.name=='epsilon1'){
+    label=expression(epsilon[1])
+    
+  }
+  if(param.name=='epsilon1' | param.name=='epsilon2'){
+    xat = c()
+    plot.data[,1] <- as.numeric(plot.data[,1])
+    for (i in seq_along(unique(plot.data[,1])))
+    {
+      if (i %% 2 !=0){
+        xat=as.numeric(c(xat,seq_along(unique(plot.data[,1]))[i]))
+      }
+    }
+  }
+  if(param.name=='epsilon2'){
+    label=expression(epsilon[2])
+  }
+  print(xat)
+  print(plot.formula)
+  if(print.legend == TRUE){
+    legend.print = list(inside = list(fun = draw.key, args = list(key=metric.key), x=0.5, y = 0.95))
+  }
+  plot.data[,1] <- factor(plot.data[,1], levels=sort(as.numeric(unique(plot.data[,1]))), labels = sort(as.numeric(unique(plot.data[,1]))))
+  plot.data$metric <- as.factor(plot.data$metric)
   plot <- create.scatterplot(plot.formula, 
                      plot.data,
-                     filename = filename,
-                     group = plot.data$metric,
+               #      filename = filename,
+                     groups = plot.data$metric,
                      pch = p.pch,
                      col = p.colours,
-                     cex = p.cex,
-                     legend = list(right = list(fun = draw.key, args = list(key=metric.key), x=0.04, y = 0.9)),
+                     cex = 0.6,
+                     legend = legend.print,
                      abline.h = c(0,1),
                      abline.col = 'grey',
-                     xlab.label = param.name,
+                     xlab.label = label,
                      ylab.label = ylab,
-                     xaxis.cex = 1,
-                     yaxis.cex = 1,
+                     xaxis.cex = 0.6,
+                     yaxis.cex = 0.6,
                      xaxis.rot = xrot,
-                     xlab.cex = 1.5,
-                     ylab.cex = 1.5,
-                     main = title,
-                     main.cex = 1.5,
+                     xlab.cex = 0.75,
+                     ylab.cex = 0.75,
+                     abline.v = abline.v,
+                     xat=xat,
+                     resolution=200,
+                     y.error.up = plot.data$se/2,
+                     y.error.bar.col = p.colours,
+                     error.bar.length=0.05,
+           #          main = title,
+            #         main.cex = 1.5,
                      description = descrip,
-                     ylimits = ylim,
+                     ylimits = c(0,1),
                      );
   return(plot);
 }
@@ -1263,8 +1703,8 @@ plot.sim.batch <- function(res, diff=F, metrics=NA){
   # TODO: take these from 'res'
   K.u.values=as.integer(names(res)) 
   K.n.values=as.integer(names(res[[1]]))
-  e1.values=as.integer(names(res[[1]][[1]]))
-  e2.values=as.integer(names(res[[1]][[1]][[1]]))
+  e1.values=as.numeric(names(res[[1]][[1]]))
+  e2.values=as.numeric(names(res[[1]][[1]][[1]]))
   
   for(param in 1:4){
     for(i in 1:10){
@@ -1377,7 +1817,7 @@ plot.properties.scatter <- function(res.p1=NULL, res.p2=NULL, res.p3=NULL, res.p
 # OUTPUT:
 #     plot - plot of the proportion of simulation runs each metric 
 #       satisfies each property
-plot.properties.heatmap <- function(res.p1=NULL, res.p2=NULL, res.p3=NULL, res.p4=NULL){
+plot.properties.heatmap <- function(res.p1=NULL, res.p2=NULL, res.p3=NULL, res.p4=NULL,filename=NULL){
   if(is.null(res.p1)){
     res.p1 <- test.p1()
   }
@@ -1418,19 +1858,37 @@ plot.properties.heatmap <- function(res.p1=NULL, res.p2=NULL, res.p3=NULL, res.p
   
   hm <- create.heatmap(
     x = res,
-    main='Proportion Runs that Satisfied Each Property',
+   # main='Proportion Runs that Satisfied Each Property',
     xaxis.lab = rownames(res),
     xaxis.rot = 0,
-    yaxis.lab = colnames(res),
+    yaxis.lab = c("Pearson","Pseudo V","MCC","AUPR","2A score"),
     grid.row=T,
     grid.col=T,
-    clustering='none'
+    clustering='none',
+  #  filename=filename,
+    resolution=400,
+    xaxis.cex =0.6,
+    yaxis.cex =0.6,
+    left.padding=2,
+    at=seq(0,1,0.001),
+    colourkey.labels.at=c(0,1),
+    colourkey.labels =c(0,1),
+    colour.centering.value=0.5,
+    colour.scheme = c('white','blue'),
+    colourkey.cex =0.6,
+    text.cex = 0.6,
+    text.col= 'grey90',
+    cell.text = sapply(c(res.p1.avg,res.p2.avg,res.p3.avg,res.p4.avg), function(x) ifelse(x==1,return(x),round(x,2))),
+    col.pos = sapply(1:4,function(x) rep(x,5)),
+    row.pos =rep(c(1:5),4), 
     )
-  print(hm)
+#  print(hm)
   print(res)
+  return(hm)
 }
 
 #### EVALUATION METRICS #####################################
+
 
 #### pearson.metric #########################################
 # Evaluates the clustering assignment based on the pearson measure
@@ -1440,14 +1898,17 @@ plot.properties.heatmap <- function(res.p1=NULL, res.p2=NULL, res.p3=NULL, res.p
 #       elements of each class that are assigned to each cluster
 # OTUPUT:
 #   score - score for the clustering assignment, higher is worse
-pearson.metric <- function(data){
-  ccms <- get.ccm(data) # co-clustering matrices, both true and predicted
+pearson.metric <- function(data,case=NULL){
+  ccms <- get.ccm(data,case) # co-clustering matrices, both true and predicted
   ccm.t <- ccms$ccm.t
   ccm.p <- ccms$ccm.p
   
   uppertri <- upper.tri(ccm.t, diag=T)
-  
-  return(cor(ccm.t[uppertri], ccm.p[uppertri], method="pearson"))
+  pearson <- cor(ccm.t[uppertri], ccm.p[uppertri], method="pearson")
+  if (is.na(pearson)){
+    pearson <- 0
+  }
+  return(pearson)
 }
 
 #### spearman.metric #########################################
@@ -1483,14 +1944,41 @@ spearman.metric <- function(data){
 #       elements of each class that are assigned to each cluster
 # OTUPUT:
 #   score - score for the clustering assignment, higher is worse
-mcc.metric <- function(data){
+mcc.metric <- function(data,case=NULL){
   # Find True/False Negatives/Positives
-  tp <- tp(data)
-  tn <- tn(data)
-  fp <- fp(data)
-  fn <- fn(data)
-  
-  return((tp*tn - fp*fn)/sqrt((tp+fp)*(tp+fn)*(tn+fp)*(tn+fn)))
+ # tp <- tp(data)
+ # tn <- tn(data)
+#  fp <- fp(data)
+ # fn <- fn(data)
+  tp <- 0
+  tn <- 0
+  fp <- 0
+  fn <- 0
+
+  ccms <- get.ccm(data,case)
+  ccm.t <- ccms$ccm.t
+  ccm.p <- ccms$ccm.p
+  uppertri <- upper.tri(ccm.t, diag=T)
+
+ 
+  for (i in  1:nrow(ccm.t)){
+    for (j in i:ncol(ccm.t)){
+      if (ccm.p[i,j]>0.5 & ccm.t[i,j]>0.5){
+          tp = tp +1
+        } else if(ccm.p[i,j]>0.5 & ccm.t[i,j]< 0.5){
+          fp = fp+1
+        } else if (ccm.p[i,j]<0.5 & ccm.t[i,j]>0.5){
+          fn = fn + 1
+        } else if (ccm.p[i,j]<0.5 & ccm.t[i,j]<0.5){
+          tn = tn+1
+        }
+    }
+  }
+  mcc <-(tp*tn - fp*fn)/sqrt((tp+fp)*(tp+fn)*(tn+fp)*(tn+fn))
+  if (is.na(mcc)){
+    mcc <- 0
+  }
+  return(mcc)
 }
 
 #### pseudo.v.metric ########################################
@@ -1511,15 +1999,15 @@ mcc.metric <- function(data){
 #       "sym" - symmetrical
 # OTUPUT:
 #   score - score for the clustering assignment, higher is worse
-pseudo.v.metric <- function(data, epsilon, version=c("normal","sym")){
-  ccms <- get.ccm(data) # co-clustering matrices, both true and predicted
+pseudo.v.metric <- function(data, epsilon, version=c("normal","sym"),case=NULL){
+  ccms <- get.ccm(data,case) # co-clustering matrices, both true and predicted
   
   # add epsilon to everything, to ensure no zero values
   if(output){
     print("Replacing zeros...")
   }
-  ccm.t <- ccms$ccm.t + epsilon
-  ccm.p <- ccms$ccm.p + epsilon
+  ccm.t <- (1-epsilon)*ccms$ccm.t + epsilon
+  ccm.p <- (1-epsilon)*ccms$ccm.p + epsilon
   
   
   
@@ -1529,14 +2017,15 @@ pseudo.v.metric <- function(data, epsilon, version=c("normal","sym")){
   }
   ccm.t <- row.normalize.help(ccm.t)
   ccm.p <- row.normalize.help(ccm.p)
+
   
   if(output){
     print("Calculating divergence...")
   }
   
   score <- list()
-  score$normal <- kl.divergence(ccm.t,ccm.p)
-  score$sym <- (score$normal + kl.divergence(ccm.p,ccm.t)) / 2
+  score$normal <- js.divergence(ccm.t,ccm.p)
+  score$sym <- (score$normal + js.divergence(ccm.p,ccm.t)) / 2
   
   return(score)
 }
@@ -1563,6 +2052,13 @@ row.normalize.help <- function(mat){
 kl.divergence <- function(p,q){
   sum(p * (log(p) - log(q)))
 }
+####jl.divergenece###########################################
+
+js.divergence <- function(p,q){
+	m=(p+q)*0.5
+	sum(p*log(p/m))+sum(q*log(q/m))
+}
+
 
 #### combinatorial.metric ###################################
 # Evaluates the clustering assignment based on a weighted sum of
@@ -1592,8 +2088,8 @@ combinatorial.metric <- function(t, f, data){
 #       elements of each class that are assigned to each cluster
 # OUTPUT:
 #     aupr - Area Under the Precision Recall curve
-aupr.metric <- function(data){
-  ccms <- get.ccm(data) # co-clustering matrices, both true and predicted
+aupr.metric <- function(data,case=NULL){
+  ccms <- get.ccm(data,case) # co-clustering matrices, both true and predicted
   ccm.t.v <- unlist(ccms$ccm.t)
   ccm.p.v <- unlist(ccms$ccm.p)
   

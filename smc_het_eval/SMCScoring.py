@@ -375,8 +375,8 @@ def calculate2(pred, truth, full_matrix=True, method='default', pseudo_counts=No
                 scores[i] = set_to_zero(1 - (scores[i] / worst_scores[i]))
             else:
                 scores[i] = set_to_zero((scores[i] - worst_scores[i]) / (1 - worst_scores[i]))
-        return [scores, np.mean(scores)]
-
+ #       return [scores, np.mean(scores)]
+        return(np.mean(scores))
     else:
         score = func(pred, truth, full_matrix=full_matrix)
         if method in larger_is_worse_methods: # normalize the scores to be between 0 and 1 where 1 is the true matrix
@@ -417,7 +417,7 @@ def calculate2_quaid(pred, truth):
             print ones_score, zeros_score
             return 0
 
-def calculate2_orig(pred, truth, full_matrix=True):
+def calculate2_orig(pred, truth, full_matrix=True, rnd=1e-50):
     n = truth.shape[0]
     if full_matrix:
         pred_cp = np.copy(pred)
@@ -433,7 +433,7 @@ def calculate2_orig(pred, truth, full_matrix=True):
     res = float(res) / count
     return 1 - res
 
-def calculate2_sqrt(pred, truth, full_matrix=True):
+def calculate2_sqrt(pred, truth, full_matrix=True, rnd=1e-50):
     n = truth.shape[0]
     if full_matrix:
         pred_cp = np.copy(pred)
@@ -593,7 +593,7 @@ def calculate2_sym_pseudoV_norm(pred, truth, rnd=1e-50, max_val=8000, full_matri
 def calculate2_sym_pseudoV(pred, truth, rnd=1e-50, full_matrix=True):
     return calculate2_pseudoV(pred, truth, rnd=rnd, full_matrix=full_matrix, sym=True)
 
-def calculate2_spearman(pred, truth, full_matrix=True):
+def calculate2_spearman(pred, truth, full_matrix=True, rnd=1e-50):
     # use only the upper triangular matrix of the truth and
     # prediction matrices
     n = truth.shape[0]
@@ -635,7 +635,9 @@ def call_pearson(p, t):
     N = p.shape[0]
 
     pbar, tbar = mymean(p, t)
+
     sp, st = mystd(p, t, pbar, tbar)
+
     res = myscale(p, t, pbar, tbar, sp, st)
 
     return res/(N**2 - 1.0)
@@ -649,7 +651,7 @@ def mymean(vec1, vec2):
 def myscale(vec1, vec2, m1, m2, s1, s2):
     N = vec1.shape[0]
     out = 0
-
+    print("s2",s2)
     # original
     # for i in xrange(N):
     #     for j in xrange(N):
@@ -690,7 +692,7 @@ def mystd(vec1, vec2, m1, m2):
 
     return s1, s2
 
-def calculate2_aupr(pred, truth, full_matrix=True):
+def calculate2_aupr(pred, truth, full_matrix=True, rnd=1e-50):
 
     n = truth.shape[0]
     if full_matrix:
@@ -1272,10 +1274,10 @@ def add_pseudo_counts(ccm, ad=None, num=None):
     # didn't optimize this. YET
     # either way, it should be cheap to do, i think all ad's are int8 matrices..
     if ad is not None:
-        new_ad = np.zeros([old_n + num] * 2)
-        new_ad[:old_n, :old_n] = np.copy(ad)
-        new_ad[(old_n+num/2):(old_n+3*num/4), :(old_n)] = 1 # one quarter of the pseudo counts are ancestors of (almost) every other cluster
-        new_ad[:(old_n), (old_n+3*num/4):(old_n+num)] = 1 # one quarter of the pseudo counts are descendants of (almost) every other cluster
+        new_ad = np.zeros([int(old_n + num)] * 2)
+        new_ad[:int(old_n), :int(old_n)] = np.copy(ad)
+        new_ad[(int(old_n+num/2)):int(old_n+3*num/4), :int(old_n)] = 1 # one quarter of the pseudo counts are ancestors of (almost) every other cluster
+        new_ad[:int(old_n), int(old_n+3*num/4):int(old_n+num)] = 1 # one quarter of the pseudo counts are descendants of (almost) every other cluster
         ad = new_ad                                         # half of the pseudo counts are cousins to all other clusters
         return ccm, ad
 
