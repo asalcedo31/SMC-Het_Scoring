@@ -11,8 +11,6 @@ from scoring_harness_optimized import *
 from permutations import *
 import gc
 import traceback
-import c_extensions
-import multiprocessing as mproc
 
 # blo
 import time
@@ -920,6 +918,7 @@ def calculate3Final(pred_ccm, pred_ad, truth_ccm, truth_ad, method="default"):
     truth_c = makeCMatrix(truth_ccm, truth_ad, truth_ad.T)
     pred_c = makeCMatrix(pred_ccm, pred_ad, pred_ad.T)
     scores.append(f(pred_c, truth_c))
+    print "DEBUG: scores: ", scores
     del pred_c, truth_c
     gc.collect()
 
@@ -931,6 +930,7 @@ def calculate3Final(pred_ccm, pred_ad, truth_ccm, truth_ad, method="default"):
     one_ccm = mb.get_ccm('OneCluster', nssms=truth_ccm.shape[0])
     one_c = makeCMatrix(one_ccm, one_ad, one_ad.T)
     one_scores.append(f(one_c, truth_c))
+    print "DEBUG: one_scores: ", one_scores
     del one_c, truth_c, one_ad, one_ccm
     gc.collect()
 
@@ -942,18 +942,64 @@ def calculate3Final(pred_ccm, pred_ad, truth_ccm, truth_ad, method="default"):
     n_ccm = mb.get_ccm('NClusterOneLineage', nssms=truth_ccm.shape[0])
     n_c = makeCMatrix(n_ccm, n_ad, n_ad.T)
     n_scores.append(f(n_c, truth_c))
-    del n_c, truth_c, n_ad, n_ccm
-    gc.collect()
+    print "DEBUG: n_scores: ", n_scores
 
     n_scores_permute = []
-    n_scores_permute.append(ccm_permute_N_cluster(truth_ad))
-    n_scores_permute.append(ccm_permute_N_cluster(truth_ad.T))
-    n_scores_permute.append(n_scores[2])
+    # this is commented until we fix the "all permutations" case for 3B using JS divergence implementations
+    # in the meantime, use the next temporary code below to calculate mutation permutations to get n_scores_permutated
+#    n_scores_permute.append(ccm_permute_N_cluster(truth_ad))
+#    n_scores_permute.append(ccm_permute_N_cluster(truth_ad.T))
 
-    score = sum(scores) / 3.0
-    one_score = sum(one_scores) / 3.0
-    n_score = sum(n_scores) / 3.0
-    n_score_permute = sum(n_scores_permute) / 3.0
+    # ----------------------------------------------------------
+    # beginning of temporary code for mutation permutations of NCluster
+    # at this point, n_ad is an upper-right triangular full of 1s, and rest are 0s
+    # n_ad has 0s along diagonal
+    n_scores_permute_1 = []
+    n_scores_permute_2 = []     # transpose permutations
+
+#    # each iteration of i sets row i to all 0s
+#    #   i.e. "flattening" NClusterOneLineage into NClusterNLineage
+#    for i in list(reversed(range(1, truth_ad.shape[0]))):
+#        for j in range(i, truth_ad.shape[0]):
+#            n_ad[i,j] = 0
+#        n_scores_permute_1.append(f(n_ad, truth_ad))
+#        n_scores_permute_2.append(f(n_ad.T, truth_ad.T))
+
+    for i in range(20):
+        pos = np.random.permutation(range(0, truth_ad.shape[0]))
+        n_ad_random = n_ad[:, pos]
+        n_scores_permute_1.append(f(n_ad_random, truth_ad))
+        n_scores_permute_2.append(f(n_ad_random.T, truth_ad.T))
+    print "DEBUG: n_scores_permute_1: ", n_scores_permute_1
+    print "DEBUG: n_scores_permute_2: ", n_scores_permute_2
+
+    n_scores_permute.append(np.mean(n_scores_permute_1))
+    n_scores_permute.append(np.mean(n_scores_permute_2))
+    # end of temporary code for mutation permutations of NCluster
+    # ----------------------------------------------------------
+
+    n_scores_permute.append(n_scores[2])
+    print "DEBUG: n_scores_permute: ", n_scores_permute
+
+    del n_c, truth_c, n_ad, n_ccm, n_scores_permute_1, n_scores_permute_2
+    gc.collect()
+
+    score = np.mean(scores)
+    one_score = np.mean(one_scores)
+    n_score = np.mean(n_scores)
+    n_score_permute = np.mean(n_scores_permute)
+
+    # TESTING: This is ignoring the cousin coclustering matrix when calculating scores
+#    score = np.mean(scores[0:2])
+#    one_score = np.mean(one_scores[0:2])
+#    n_score = np.mean(n_scores[0:2])
+#    n_score_permute = np.mean(n_scores_permute[0:2])
+    # TESTING: Using median instead of mean
+#    score = np.median(scores)
+#    one_score = np.median(one_scores)
+#    n_score = np.median(n_scores)
+#    n_score_permute = np.median(n_scores_permute)
+
 
 #imaad: I commented out the return of two scorse because we will be going with n_score_permute
 #    return [set_to_zero(1 - (score / max(one_score, n_score))),set_to_zero(1 - (score / max(one_score, n_score_permute)))]
@@ -1184,7 +1230,6 @@ def parseVCF2and3(data, sample_mask=None):
     # ]
     return [[vcf_lines], [true_lines], mask]
 
-#@numba.jit(numba.float64[::](numba.float64[::],numba.float64[::]))
 def filterFPs(x, mask):
     # EVERYTHING is done in memory
     #   1 - the elements at the indicies specified by mask are "picked" and assembled into a matrix
@@ -1199,11 +1244,9 @@ def filterFPs(x, mask):
     #       that's why we don't do it anymore
     if x.shape[0] == x.shape[1]:
         # 1 assemble masked matrix within the original matrix
-        
-        #for i, m1 in enumerate(mask):
-        #    for j, m2 in enumerate(mask):
-        #        x[i, j] = x[m1, m2]
-        c_extensions.filterFPs_remove_fps(x,mask)
+        for i, m1 in enumerate(mask):
+            for j, m2 in enumerate(mask):
+                x[i, j] = x[m1, m2]
 
         old_n = x.shape[0]
         new_n = len(mask)
@@ -1513,54 +1556,11 @@ def verifyChallenge(challenge, predfiles, vcf):
             return "Invalid"
     return "Valid"
 
-
-def loadTruthFiles(truthq,truthfile,valfunc,targs,masks,challenge):
-    tout = []
-    vout = []
-    tpout = []
-
-    if challenge in ['2B']:
-        try:
-            vout = verify(truthfile, "truth file for Challenge %s" % (challenge), valfunc, *targs, mask=masks['truths'])
-        except SampleError as e:
-            raise e
-
-        printInfo('TRUTH DIMENSIONS -> ', vout.shape)
-
-        if WRITE_2B_FILES:
-            np.savetxt('truth2B.txt.gz', vout)
-
-        mem('VERIFY TRUTH %s' % truthfile)
-        vout_with_pseudo_counts = add_pseudo_counts(vout)
-        tout.append(vout_with_pseudo_counts)
-        mem('APC TRUTH %s' % truthfile)
-    else:
-        tout.append(verify(truthfile, "truth file for Challenge %s" % (challenge), valfunc, *targs, mask=masks['truths']))
-        mem('VERIFY TRUTH %s' % truthfile)
-        
-    if challenge in ['2B', '3B']:
-        printInfo('FINAL TRUTH DIMENSIONS -> ', tout[-1].shape)
-    truthq.put(tout[0])
-
-def loadPredFiles(predq,predfile,valfunc,pargs,masks,challenge):
-    pout = []
-    
-    pout.append(verify(predfile, "prediction file for Challenge %s" % (challenge), valfunc, *pargs, mask=masks['samples']))
-    if pout[-1] is None:
-        err_msgs.append("Unable to open prediction file")
-        return "NA"
-    mem('VERIFY PRED %s' % predfile)
-
-    if challenge in ['2B', '3B']:
-        printInfo('PRED DIMENSIONS -> ', pout[-1].shape)
-
-    predq.put(pout[0])
-
  
 def scoreChallenge(challenge, predfiles, truthfiles, vcf, sample_fraction=1.0, rnd=1e-50):
     
     
-    ################## Verify VCF ################################################################################
+    
     #global err_msgs
     mem('START %s' % challenge)
     masks = makeMasks(vcf, sample_fraction) if sample_fraction != 1.0 else { 'samples' : None, 'truths' : None}
@@ -1587,7 +1587,7 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, sample_fraction=1.0, r
     tout = []
     pout = []
     tpout = []
-    ############### Verify pred and truth files #############################################################################
+
     for predfile, truthfile, valfunc in zip(predfiles, truthfiles, challengeMapping[challenge]['val_funcs']):
         if is_gzip(truthfile) and challenge not in ['2B', '3B']:
             err_msgs.append('Incorrect format, must input a text file for challenge %s' % challenge)
@@ -1596,13 +1596,6 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, sample_fraction=1.0, r
 
         vcfargs = tpout + nssms[0] + nssms[1]
         # an overlapping matrix is created for challenge 2A
-        
-        #queue to store results from multiprocessing
-        #multiprocessing objects
-        truthq = mproc.Queue()
-        predq = mproc.Queue()
-        ######### Truth file ####################################################### 
-        ####### Seperate for 2A and 3A beacuse of optimization. This should be fixed. 
         if challenge in ['2A', '3A']:
             if valfunc is om_validate2A:
                 try:
@@ -1627,35 +1620,50 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, sample_fraction=1.0, r
                     return "NA"                    
                 tpout.append(vpout)
                 tpout.append(vtout)
-        
-        
 
+        elif challenge in ['2B']:
+            try:
+                vout = verify(truthfile, "truth file for Challenge %s" % (challenge), valfunc, *targs, mask=masks['truths'])
+            except SampleError as e:
+                raise e
+   
+            printInfo('TRUTH DIMENSIONS -> ', vout.shape)
+
+            if WRITE_2B_FILES:
+                np.savetxt('truth2B.txt.gz', vout)
+
+            mem('VERIFY TRUTH %s' % truthfile)
+            vout_with_pseudo_counts = add_pseudo_counts(vout)
+            tout.append(vout_with_pseudo_counts)
+            mem('APC TRUTH %s' % truthfile)
         else:
-            #loadTruthFiles(truthq,truthfile,valfunc,targs,masks,challenge)
-            proc_truth = mproc.Process(target=loadTruthFiles,args=(truthq,truthfile,valfunc,targs,masks,challenge))
-            proc_truth.start()
-
-        ############## predfile #####################################################
-            if is_gzip(predfile) and challenge not in ['2B', '3B']:
-                err_msgs.append('Incorrect format, must input a text file for challenge %s' % challenge)
-                return "NA"
+            tout.append(verify(truthfile, "truth file for Challenge %s" % (challenge), valfunc, *targs, mask=masks['truths']))
+            mem('VERIFY TRUTH %s' % truthfile)
         
+        if challenge in ['2B', '3B']:
+            printInfo('FINAL TRUTH DIMENSIONS -> ', tout[-1].shape)
 
-            #read in from pred file
-            if challenge not in ['2A', '3A']:
-                pargs = pout + nssms[0]
-            
-            #loadPredFiles(predq,predfile,valfunc,pargs,masks,challenge)
-            proc_pred = mproc.Process(target=loadPredFiles,args=(predq,predfile,valfunc,pargs,masks,challenge))
-            proc_pred.start()
+        # starts reading in predfile here
+        if is_gzip(predfile) and challenge not in ['2B', '3B']:
+            err_msgs.append('Incorrect format, must input a text file for challenge %s' % challenge)
+            return "NA"
 
-            pout.append(predq.get())
-            tout.append(truthq.get())
+        # read in from pred file
+        if challenge not in ['2A', '3A']:
+            pargs = pout + nssms[0]
 
-            proc_truth.join()
-            proc_pred.join()
+            pout.append(verify(predfile, "prediction file for Challenge %s" % (challenge), valfunc, *pargs, mask=masks['samples']))
+            if pout[-1] is None:
+                err_msgs.append("Unable to open prediction file")
+                return "NA"
+            mem('VERIFY PRED %s' % predfile)
 
+        if challenge in ['2B', '3B']:
+            printInfo('PRED DIMENSIONS -> ', pout[-1].shape)
 
+        if challenge not in ['2A', '3A']:
+            if tout[-1] is None or pout[-1] is None:
+                return "NA"
 
     # if challenge in ['3A'] and WRITE_3B_FILES:
         # np.savetxt('pred3B.txt.gz', pout[-1])
@@ -1664,8 +1672,6 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, sample_fraction=1.0, r
         printInfo('tout sum -> ', np.sum(tout[0]))
         printInfo('pout sum -> ', np.sum(pout[0]))
 
-
-    ################# filter FPs ###########################################################
     if challengeMapping[challenge]['filter_func']:
         pout = [challengeMapping[challenge]['filter_func'](x, nssms[2]) for x in pout]
         printInfo('PRED DIMENSION(S) -> ', [p.shape for p in pout])
@@ -1684,8 +1690,7 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, sample_fraction=1.0, r
             # tout[0] = np.dot(tout[0], tout[0].T)
             # pout[0] = np.dot(pout[0], pout[0].T)
             # mem('3A DOT')
-    
-    ############# Score ##########################################################################
+
     if challenge in ['2A']:
         return challengeMapping[challenge]['score_func'](*tpout, add_pseudo=True, pseudo_counts=None, rnd=rnd)
     if challenge in ['2B']:
