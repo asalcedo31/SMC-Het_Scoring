@@ -1,6 +1,6 @@
 import numpy as np
 from permutations import*
-
+ 
 import gc
 import random
 
@@ -78,7 +78,7 @@ def om_calculate2A(om, full_matrix=True, method='default', add_pseudo=True, pseu
     :param pseudo_counts: logical for how many psuedo counts to add to the matrices
     :return: subchallenge 2 score for the predicted co-clustering matrix
     '''
-
+   # print("called")
     larger_is_worse_methods = ['pseudoV', 'sym_pseudoV', 'js_divergence'] # methods where a larger score is worse
     import gc
     func_dict = {
@@ -93,8 +93,14 @@ def om_calculate2A(om, full_matrix=True, method='default', add_pseudo=True, pseu
     }
     func = func_dict.get(method, None)
     tp, fp, tn, fn = calculate_overlap_matrix(om)
+    #print('tn',tn,'fp',fp,'fn', fn, 'tp',tp)
+   # print("om", om)
     if add_pseudo:
+       # print ("added")
         tp, fp, tn, fn = add_pseudo_counts_om_eff(tp, fp, tn, fn)
+       # print('tn',tn,'fp',fp,'fn', fn, 'tp',tp)
+    total = np.sum([tp,fp,fn,tn])
+  #  print('sum',total)
     if func is None:
         scores = []
         worst_scores = []
@@ -103,16 +109,18 @@ def om_calculate2A(om, full_matrix=True, method='default', add_pseudo=True, pseu
         functions = ['js_divergence','mcc','mcc']
 
         for m in functions:
+          #  print("m", m, func_dict[m])
             gc.collect()
             if m is 'pseudoV' or m is 'sym_pseudoV' or m is 'js_divergence':
                 scores.append(func_dict[m](om, full_matrix=full_matrix, modify=add_pseudo, pseudo_counts=pseudo_counts, rnd=rnd))
             else:
                 scores.append(func_dict[m](tp, fp, tn, fn, full_matrix=full_matrix, rnd=rnd))
-
+        
             # normalize the scores to be between (worst of OneCluster and NCluster scores) and (Truth score)
         for m in functions:
             gc.collect()
             worst_scores.append(get_worst_score_om(om, func_dict[m], larger_is_worse=(m in larger_is_worse_methods), rnd=rnd))
+        
         for i, m in enumerate(functions):
             if m in larger_is_worse_methods:
                 scores[i] = set_to_zero(1 - (scores[i] / worst_scores[i]))
@@ -516,7 +524,8 @@ def om_calculate2_mcc(tp, fp, tn, fn, full_matrix=True, rnd=1e-50):
         fn /= 2 
         fp /= 2
         tn /= 2
-
+    
+    #print('tn',tn,'fp',fp,'fn', fn, 'tp',tp)
     denom_terms = [(tp+fp), (tp+fn), (tn+fp), (tn+fn)]
     # print tp, fp, tn, fn
 
@@ -886,9 +895,9 @@ def calculate3A(om, truth_data, ad_pred, ad_truth, rnd=1e-50):
     one_score = sum(one_scores) / 3.0
     n_score = sum(n_scores) / 3.0
     n_score_permuted = sum(n_scores_permuted)/3.0
-
+    return[score,one_score,n_score_permuted,set_to_zero((1 - (score / max(one_score, n_score_permuted))))]
 #    return [set_to_zero((1 - (score / max(one_score, n_score)))), set_to_zero((1 - (score / max(one_score, n_score_permuted))))]  
-    return  set_to_zero((1 - (score / max(one_score, n_score_permuted))))
+#    return  set_to_zero((1 - (score / max(one_score, n_score_permuted))))
 
 # adds num pseudo counts to the om; default is square root of the number of mutations
 def add_pseudo_counts_om(om, num=None):
@@ -933,6 +942,7 @@ def add_pseudo_counts_om_eff(tp, fp, tn, fn, num=None):
 
     N = np.floor(np.sqrt(tp+fp+tn+fn))
     K = np.floor(np.sqrt(N))
+   # print('K psuedo count', K)
     if num is not None:
         K = num
     tp += K
@@ -959,6 +969,7 @@ def get_worst_score_om(om, scoring_func, larger_is_worse=True, rnd=1e-50):
 def get_bad_score_om(om, score_func, scenario='OneCluster', pseudo_counts=None, rnd=1e-50):
     if score_func is om_calculate2_pseudoV or score_func is om_calculate2_pseudoV_norm or score_func is om_calculate2_sym_pseudoV or score_func is om_calculate2_js_divergence:
         bad_om = get_bad_om(om, scenario)
+       # print("scenario ", scenario,score_func(bad_om, modify=True, pseudo_counts=pseudo_counts, rnd=rnd) )
         return score_func(bad_om, modify=True, pseudo_counts=pseudo_counts, rnd=rnd)
     else:
         tp, fp, tn, fn = add_pseudo_counts_om_eff(*calculate_overlap_matrix(get_bad_om(om, scenario)))

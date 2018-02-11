@@ -351,6 +351,8 @@ def calculate2(pred, truth, full_matrix=True, method='default', pseudo_counts=No
         "aupr"           : calculate2_aupr,
         "mcc"            : calculate2_mcc
     }
+    printInfo('pred shape-> ', pred.shape)
+    printInfo('truth shape-> ', truth.shape)
     func = func_dict.get(method, None)
     if func is None:
         scores = []
@@ -365,16 +367,18 @@ def calculate2(pred, truth, full_matrix=True, method='default', pseudo_counts=No
             gc.collect()
             scores.append(func_dict[m](pred, truth, full_matrix=full_matrix, rnd=rnd))
             # normalize the scores to be between (worst of OneCluster and NCluster scores) and (Truth score)
+       # print('raw score', scores)
         for m in functions:
             gc.collect()
             worst_scores.append(get_worst_score(nssms, truth, func_dict[m], larger_is_worse=(m in larger_is_worse_methods), rnd=rnd))
+        #print('worst score', worst_scores)
         for i, m in enumerate(functions):
             if m in larger_is_worse_methods:
                 scores[i] = set_to_zero(1 - (scores[i] / worst_scores[i]))
             else:
                 scores[i] = set_to_zero((scores[i] - worst_scores[i]) / (1 - worst_scores[i]))
- #       return [scores, np.mean(scores)]
-        return(np.mean(scores))
+        return [scores, np.mean(scores)]
+  #      return(np.mean(scores))
     else:
         score = func(pred, truth, full_matrix=full_matrix)
         if method in larger_is_worse_methods: # normalize the scores to be between 0 and 1 where 1 is the true matrix
@@ -412,7 +416,7 @@ def calculate2_quaid(pred, truth):
         try:
             return 2.0/(1.0/ones_score + 1.0/zeros_score)
         except Warning:
-            print ones_score, zeros_score
+           # print ones_score, zeros_score
             return 0
 
 def calculate2_orig(pred, truth, full_matrix=True, rnd=1e-50):
@@ -482,7 +486,6 @@ def calculate2_js_divergence(pred, truth, rnd=1e-50, full_matrix=True, sym=True)
     # Avoid dividing by zero by rounding everything less than rnd up to rnd
     # Note: it is ok to do this after making the matrix upper triangular
     # since the bottom triangle of the matrix will not affect the score
-
     size = np.array(pred_cp.shape)[1]
     res = 0 # result to be returned
 
@@ -649,7 +652,8 @@ def mymean(vec1, vec2):
 def myscale(vec1, vec2, m1, m2, s1, s2):
     N = vec1.shape[0]
     out = 0
-    print("s2",s2)
+  #  print("s2",s2)
+   # print("s1",s1)
     # original
     # for i in xrange(N):
     #     for j in xrange(N):
@@ -731,19 +735,25 @@ def calculate2_mcc(pred, truth, full_matrix=True, rnd=1e-50):
     tn = 0.0
     fp = 0.0
     fn = 0.0
-
+    other = 0
+    count = 0
     # original
+   # print(np.max(xrange(pred_cp.shape[0])))
+   # print(np.min(xrange(pred_cp.shape[0])))
     # for i in xrange(pred_cp.shape[0]):
     #     for j in xrange(pred_cp.shape[1]):
     #         if truth_cp[i,j] and pred_cp[i,j] >= 0.5:
     #             tp = tp +1.0
     #         elif truth_cp[i,j] and pred_cp[i,j] < 0.5:
     #             fn = fn + 1.0
-    #         if (not truth_cp[i,j]) and pred_cp[i,j] >= 0.5:
+    #         elif (not truth_cp[i,j]) and pred_cp[i,j] >= 0.5:
     #             fp = fp +1.0
     #         elif (not truth_cp[i,j]) and pred_cp[i,j] < 0.5:
     #             tn = tn + 1.0
-
+    #         else:
+    #          #   print("other:", truth_cp[i,j], pred_cp[i,j])
+    #             other += 1
+    #         count +=1
     # optimized with fancy boolean magic algorithm to calculate MCC
     for i in xrange(pred_cp.shape[0]):
         # only round if the matrices are floats
@@ -764,7 +774,9 @@ def calculate2_mcc(pred, truth, full_matrix=True, rnd=1e-50):
         fp += counts[1]
         fn += counts[2]
         tp += counts[3]
-
+ #   print('tn',tn,'fp',fp,'fn', fn, 'tp',tp, 'other', other, 'count', count)
+    total = np.sum([tn,fp,fn,tp,other])
+ #   print('sum', total )
     # To avoid divide-by-zero cases
     denom_terms = [(tp+fp), (tp+fn), (tn+fp), (tn+fn)]
 
@@ -1003,7 +1015,8 @@ def calculate3Final(pred_ccm, pred_ad, truth_ccm, truth_ad, method="default"):
 
 #imaad: I commented out the return of two scorse because we will be going with n_score_permute
 #    return [set_to_zero(1 - (score / max(one_score, n_score))),set_to_zero(1 - (score / max(one_score, n_score_permute)))]
-    return set_to_zero(1 - (score / max(one_score, n_score_permute)))
+#    return set_to_zero(1 - (score / max(one_score, n_score_permute)))
+    return [score,one_score,n_score_permute,set_to_zero(1 - (score / max(one_score, n_score_permute)))]
 def makeCMatrix(*matrices):
     # perform (1 - *matrices) without loading all the matrices into memory
     shape = matrices[0].shape
@@ -1365,6 +1378,8 @@ def get_worst_score(nssms, truth_ccm, scoring_func, truth_ad=None, subchallenge=
 def get_bad_score(nssms, true_ccm, score_func, true_ad=None, scenario='OneCluster', subchallenge='SC2', pseudo_counts=None, rnd=1e-50):
     if subchallenge is 'SC2':
         bad_ccm = add_pseudo_counts(get_bad_ccm(nssms, scenario), num=pseudo_counts)
+        bad_raw = get_bad_ccm(nssms, scenario)
+     #   print(bad_raw.shape)
         return score_func(bad_ccm, true_ccm, rnd=rnd)
     elif subchallenge is 'SC3':
         bad_ccm, bad_ad = add_pseudo_counts(get_bad_ccm(nssms, scenario), get_bad_ad(nssms, scenario), num=pseudo_counts)
@@ -1507,7 +1522,12 @@ challengeMapping = {
         'vcf_func' : parseVCF1C,
         'filter_func' : None
     },
-    # According to Quaid, there is no need to filter false positves with the new method developed for scoring subchallenge 2A
+   '2A_non_opt' : {
+        'val_funcs' : [validate2A],
+        'score_func' : calculate2,
+        'vcf_func' : parseVCF2and3,
+        'filter_func' : None
+    },
     '2A' : {
         'val_funcs' : [om_validate2A],
         'score_func' : om_calculate2A,
@@ -1620,6 +1640,14 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, sample_fraction=1.0, r
                     return "NA"                    
                 tpout.append(vpout)
                 tpout.append(vtout)
+        elif challenge == '2A_non_opt':
+            try:
+                vout = verify(truthfile, "truth file for Challenge %s" % (challenge), valfunc, *targs, mask=masks['truths'])
+            except SampleError as e:
+                raise e
+            printInfo('TRUTH DIMENSIONS -> ', vout.shape)
+            vout_with_pseudo_counts = add_pseudo_counts(vout)
+            tout.append(vout_with_pseudo_counts)
 
         elif challenge in ['2B']:
             try:
@@ -1647,7 +1675,6 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, sample_fraction=1.0, r
         if is_gzip(predfile) and challenge not in ['2B', '3B']:
             err_msgs.append('Incorrect format, must input a text file for challenge %s' % challenge)
             return "NA"
-
         # read in from pred file
         if challenge not in ['2A', '3A']:
             pargs = pout + nssms[0]
@@ -1658,7 +1685,7 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, sample_fraction=1.0, r
                 return "NA"
             mem('VERIFY PRED %s' % predfile)
 
-        if challenge in ['2B', '3B']:
+        if challenge in ['2B', '3B', '2A_non_opt']:
             printInfo('PRED DIMENSIONS -> ', pout[-1].shape)
 
         if challenge not in ['2A', '3A']:
@@ -1681,10 +1708,14 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, sample_fraction=1.0, r
         printInfo('tout sum filtered -> ', np.sum(tout[0]))
         printInfo('pout sum filtered -> ', np.sum(pout[0]))
 
-        if challenge in ['2B']:
+        if challenge in ['2B','2A_non_opt']:
             pout = [ add_pseudo_counts(*pout) ]
             mem('APC PRED')
             printInfo('FINAL PRED DIMENSION -> ', pout[-1].shape)
+    if challenge in ['2B','2A_non_opt']:
+        pout = [ add_pseudo_counts(*pout) ]
+        mem('APC PRED')
+        printInfo('FINAL PRED DIMENSION -> ', pout[-1].shape)
 
         # if challenge in ['3A']:
             # tout[0] = np.dot(tout[0], tout[0].T)
@@ -1692,6 +1723,7 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, sample_fraction=1.0, r
             # mem('3A DOT')
 
     if challenge in ['2A']:
+        #return challengeMapping[challenge]['score_func'](*tpout,  rnd=rnd)
         return challengeMapping[challenge]['score_func'](*tpout, add_pseudo=True, pseudo_counts=None, rnd=rnd)
     if challenge in ['2B']:
         return challengeMapping[challenge]['score_func'](*(pout + tout), rnd=rnd)

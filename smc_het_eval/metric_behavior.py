@@ -1,6 +1,8 @@
 from SMCScoring import *
+from make_ccm import *
 import numpy as np
 import csv
+import inspect as inspect
 
 tsv_dir = './scoring_metric_data/text_files/' # directory to save tsv's to
 
@@ -172,7 +174,117 @@ def scoring1C_behavior(method='abs'):
     f.write('\n'.join(res))
     f.close()        
 
-def scoring2A_behavior(tst_big_mat=True, tst_rand_reassign=True, tst_closest_reassign=True, method='default', verbose=False):
+
+def rand_size_clusters(n_clusters,n_ssm):
+    p_clusters = np.zeros(n_clusters)
+    while (np.sum(p_clusters)==0 or np.sum(p_clusters/np.sum(p_clusters))>1):
+        p_clusters = map(lambda x: np.random.normal(loc=10, scale=2), range(n_clusters))
+    size_clusters = np.random.multinomial(n_ssm, p_clusters/np.sum(p_clusters))
+    return(size_clusters)    
+
+def set_prop_merged_split(prop,scenario,n_ssm,n_clusters):
+   # print("scenario: ", scenario)
+    if (scenario=='MergeClusterBot'):
+        merged_ssm = int(prop*n_ssm)
+        ssm_other = n_ssm-merged_ssm
+        size_merged = rand_size_clusters(2,merged_ssm)
+     #   print("size_merged", size_merged)
+        size_others = rand_size_clusters(n_clusters-2, ssm_other)
+    #    print(size_others)
+    elif (scenario=='SplitClusterBot'):
+        merged_ssm = int(prop*n_ssm)
+        ssm_other = n_ssm-merged_ssm
+        size_merged = rand_size_clusters(1,merged_ssm)
+     #   print("size_merged", size_merged)
+        size_others = rand_size_clusters(n_clusters-1, ssm_other)
+    #    print(size_others)    
+    size_all = np.concatenate((size_others,size_merged))
+   # print(size_all)
+  #  print(np.sum(size_all))
+    return(size_all)
+
+
+def scoring2A_behavior_var(methods='js_divergence', scenarios = ["SplitClusterBot", "MergeClusterBot", "OneCluster", "NCluster", "SmallExtra", "BigExtra"], verbose=False,n_ssm=600,n_clusters=6,in_big_extra_prop=0.1,in_small_extra_prop=0.025,write=True,rep=100,in_prop_split=0.5, set_prop = None):
+    '''Test the scoring behaviour of different metrics for evaluating Sub-Challenge 2, under various conditions.
+
+    :param method: scoring metric to use
+    :param verbose: boolean for whether to print output on the status of the function
+    '''
+
+    # Test the scoring behavior when the predicted CCM comes from one of the presepeficied 'mistake scenarios'
+    # i.e. mistakes in the co-clustering assignment that we expect people to make
+    if verbose:
+     #   print('Testing scoring for SC2 using the ' + method + ' scoring metric:')
+        print('Scoring behavior for mistake scenarios with 3 clusters...')
+ 
+    #big_extra_num = 33 # number of mutations to add in the BigExtra case
+    # True CCM:
+
+     
+  #  scenarios = [ "OneCluster", "NCluster", "SmallExtra", "BigExtra","SplitClusterMidMultiChild", "SplitClusterMidOneChild", "SplitClusterBot",
+   #             "MergeClusterTop&Mid", "MergeClusterMid&BotMultiChild", "MergeClusterMid&BotOneChild","MergeClusterBot"]# mistake scenarios to be tested
+    res = []
+    f = open(tsv_dir + 'scoring2A_cases_params'+ '_nc'+ str(n_clusters) +'_s'+ str(n_ssm) + '_bep'+str(in_big_extra_prop)+'_sep'+str(in_small_extra_prop)+ '.tsv', 'w')
+    for i in range(rep):
+      # print("sc1",sc)
+       # f.write(str(i)+'\t')
+        if set_prop != None:
+            size_clusters = set_prop_merged_split(prop =set_prop, scenario=scenarios[0], n_ssm=n_ssm, n_clusters=n_clusters)
+         #   print("out_size_clusters",size_clusters)
+        else: 
+            size_clusters = rand_size_clusters(n_clusters,n_ssm)
+     #   print(p_clusters)
+     #   print(p_clusters/np.sum(p_clusters))
+        
+        big_extra_prop = in_big_extra_prop
+        small_extra_prop = in_small_extra_prop
+       # big_extra_prop = np.random.normal(loc=in_big_extra_prop,scale=0.01)
+        #small_extra_prop = np.random.normal(loc=in_small_extra_prop,scale=0.005)
+        clust_out = [str(x) for x in size_clusters]
+        f.write('\t'.join(clust_out)+'\t')
+        
+     #   print(size_clusters)
+        
+        # calculate the CCM
+        prop_split = np.random.normal(loc=in_prop_split,scale=0.1)
+        #prop_split=np.random.beta(a=2,b=2)
+        f.write(str(big_extra_prop)+str(small_extra_prop)+'\t'+str(prop_split)+'\n')
+       # print("scenarios")
+        for sc in scenarios:  
+         #   print("sc", sc)  
+        #   print("prop_split",prop_split)
+            t_ccm, t_clusters = get_ccm_nvar('Truth',size_clusters=size_clusters, n_clusters=n_clusters, big_extra_prop=big_extra_prop)
+            if (sc == "OneCluster" or sc == "NCluster"):
+                ccm = get_ccm_nvar(sc , t_ccm=t_ccm, t_clusters=t_clusters, size_clusters=size_clusters, prop_split=0.5, n_clusters=n_clusters, big_extra_prop = big_extra_prop, small_extra_prop = small_extra_prop)
+            else:
+                ccm, clusters = get_ccm_nvar(sc , t_ccm=t_ccm, t_clusters=t_clusters, size_clusters=size_clusters, prop_split=prop_split, n_clusters=n_clusters, big_extra_prop = big_extra_prop, small_extra_prop = small_extra_prop)
+                ccm, clusters = closest_rand_reassign(clusters)
+        #    print("sc2",sc)
+        #    print(t_ccm.shape, ccm.shape)
+            out = np.array((sc,i),dtype='S20,int')
+            score =  [calculate2(ccm, t_ccm, method=method) for method in methods]
+            score = map(lambda x: 0 if np.isnan(x) else x , score)
+      #      print(score)
+            out = np.array((sc,i,score),dtype=np.dtype([('sc','S40'),('rep','int'),('scores', str(len(methods))+'float32')]))
+    #        ccm = get_ccm(sc ,t_ccm=t_ccm, t_clusters=t_clusters, size_clusters=size_clusters, n_clusters=n_clusters, big_extra_num=big_extra_num)
+            # calculate the score for the given scenario
+            
+         #   print(out)
+
+ #           res.append([sc,i])
+            res.append(out)
+    res = np.array(res)
+    
+    
+    f.close()
+ #   print(res)
+  #  print(res[['scores']])
+   # print(res.shape)
+     
+    return(res)
+
+
+def scoring2A_behavior(tst_big_mat=False, tst_rand_reassign=False, tst_closest_reassign=False, method='default', verbose=False,size_clusters=100,n_clusters=6,big_extra_num=15,write=True):
     '''Test the scoring behaviour of different metrics for evaluating Sub-Challenge 2, under various conditions.
 
     :param tst_big_mat: boolean for whether to test all the mistake scenarios with a larger number of clusters
@@ -187,24 +299,34 @@ def scoring2A_behavior(tst_big_mat=True, tst_rand_reassign=True, tst_closest_rea
     if verbose:
         print('Testing scoring for SC2 using the ' + method + ' scoring metric:')
         print('Scoring behavior for mistake scenarios with 3 clusters...')
-    size_clusters = 200 # true size of each cluster
-    n_clusters = 3 # true number of clusters
-    big_extra_num = 33 # number of mutations to add in the BigExtra case
+    #size_clusters = 200 # true size of each cluster
+    #n_clusters = 3 # true number of clusters
+    #big_extra_num = 33 # number of mutations to add in the BigExtra case
     # True CCM:
     t_ccm, t_clusters = get_ccm('Truth',size_clusters=size_clusters, n_clusters=n_clusters, big_extra_num=big_extra_num)
-    scenarios = ["SplitClusterBot", "MergeClusterBot", "OneCluster", "NCluster", "SmallExtra", "BigExtra"] # mistake scenarios to be tested
+#    scenarios = ["SplitClusterBot", "MergeClusterBot", "OneCluster", "NCluster", "SmallExtra", "BigExtra"] # mistake scenarios to be tested
+    scenarios = [ "OneCluster", "NClusterOneLineage", "NClusterTwoLineages", "NClusterCorrectLineage",
+                "ParentIsNieceWithChildren", "ParentIsSiblingWithChildren", "ParentIsCousin","ParentIsAunt", "ParentIsGrandparent", "ParentIsSibling",
+                "BigExtraTop", "BigExtraMid", "BigExtraCurBot", "BigExtraNewBot",
+                "SmallExtraTop", "SmallExtraMid", "SmallExtraNewBot", 'SmallExtraCurBot',
+                "SplitClusterMidMultiChild", "SplitClusterMidOneChild", "SplitClusterBotSame", "SplitClusterBotDiff",
+                "MergeClusterTop&Mid", "MergeClusterMid&BotMultiChild", "MergeClusterMid&BotOneChild","MergeClusterBot"]
+
 
     # Cases:
     res = []
     for sc in scenarios:
         # calculate the CCM
+        print("sc",sc)
         ccm = get_ccm(sc ,t_ccm=t_ccm, t_clusters=t_clusters, size_clusters=size_clusters, n_clusters=n_clusters, big_extra_num=big_extra_num)
         # calculate the score for the given scenario
         res.append([sc ,calculate2(ccm, t_ccm, method=method)])
         # res.append([sc ,calculate2(ccm, t_ccm, method=method)])
-
+    if write == False:
+    	return res
     res = [map(str,x) for x in res]
     res = ['\t'.join(x) for x in res]
+    
     f = open(tsv_dir + 'scoring2A_cases_' + method + '.tsv', 'w')
     f.write('\n'.join(res))
     f.close()
@@ -317,6 +439,7 @@ def scoring2A_behavior(tst_big_mat=True, tst_rand_reassign=True, tst_closest_rea
             f = open(tsv_dir + 'scoring2A_closest_reassignment_' + method + '.tsv', 'w')
             f.write('\n'.join(res['closest']))
             f.close()
+    
 
     
 def scoring2B_behavior(tst_betas=True, tst_prob_mod=True, tst_prob_mod_err=True, method='pseudoV', verbose=True):
@@ -532,7 +655,7 @@ def scoring3A_behavior_all(verbose=True):
                     scoring3A_behavior(method=method, verbose=verbose,pc_amount=pc, full_matrix=fm, in_mat=input+1)
                     print 'Done %s - Pseudo Counts: %s - Full Matrix: %s, Input Matrices Index: %s' % (method,pc,fm, input)
 
-def scoring3A_weight_behavior(methods=["pseudoV", "pearson", "sym_pseudoV"], verbose=False, res=None, in_mat=2):
+def scoring_weight_behavior(sc="2A", methods=["js_divergence", "pearson", "mcc"], verbose=False, res=None, in_mat=2):
     '''Create the data on how the weights used in subchallenge 3 affect the score using the given scoring methods
 
     Attributes:
@@ -540,18 +663,34 @@ def scoring3A_weight_behavior(methods=["pseudoV", "pearson", "sym_pseudoV"], ver
     :param verbose: boolean for whether to output details of the scoring metrics
     '''
     # True values for each attribute
-    if res is None:
-        res = np.transpose(np.asarray([[row[1] for row in scoring3A_behavior(method, verbose=verbose)] for method in methods]))
-    print res
+    if sc == '3A':
+	    if res is None:
+	        res = np.transpose(np.asarray([[row[1] for row in scoring3A_behavior(method, verbose=verbose,write=False)] for method in methods]))
+	    print res
+	    scenarios = ["Truth", "OneCluster", "NClusterOneLineage", "NClusterTwoLineages", "NClusterCorrectLineage",
+                "ParentIsNieceWithChildren", "ParentIsSiblingWithChildren", "ParentIsCousin","ParentIsAunt", "ParentIsGrandparent", "ParentIsSibling",
+                "BigExtraTop", "BigExtraMid", "BigExtraCurBot", "BigExtraNewBot",
+                "SmallExtraTop", "SmallExtraMid", "SmallExtraNewBot", 'SmallExtraCurBot',
+                "SplitClusterMidMultiChild", "SplitClusterMidOneChild", "SplitClusterBotSame", "SplitClusterBotDiff",
+                "MergeClusterTop&Mid", "MergeClusterMid&BotMultiChild", "MergeClusterMid&BotOneChild","MergeClusterBot"]
 
+    # True values for each attribute
+    if sc == '2A':
+        if res is None:
+            res = np.transpose(np.asarray([[row[1] for row in scoring2A_behavior(method=method, verbose=verbose,write=False)] for method in methods]))
+        print res
+        scenarios = ["OneCluster", "NClusterOneLineage", "NClusterTwoLineages", "NClusterCorrectLineage", "ParentIsNieceWithChildren", "ParentIsSiblingWithChildren", "ParentIsCousin","ParentIsAunt", "ParentIsGrandparent", "ParentIsSibling", "BigExtraTop", "BigExtraMid", "BigExtraCurBot", "BigExtraNewBot", "SmallExtraTop", "SmallExtraMid", "SmallExtraNewBot", 'SmallExtraCurBot', "SplitClusterMidMultiChild", "SplitClusterMidOneChild", "SplitClusterBotSame", "SplitClusterBotDiff", "MergeClusterTop&Mid", "MergeClusterMid&BotMultiChild", "MergeClusterMid&BotOneChild","MergeClusterBot"] 
+   
     wght_res = {'Case':scenarios}
     n_method = len(methods)
     weights = [0,0.5,1]
     weight_list = get_weights(n_method, weights)
     print weight_list
     for wght in weight_list:
+        print("weight",wght)
         norm_wght = wght / float(sum(wght))
         scores = np.sum(norm_wght * res, 1)
+        print("scores",scores)
         if set(wght) == {0,weights[-1]} or set(wght) == {weights[-1]}:
             key = '+'.join([methods[i] for i in range(n_method) if wght[i] == weights[-1]])
             wght_res[key] = scores
@@ -565,7 +704,7 @@ def scoring3A_weight_behavior(methods=["pseudoV", "pearson", "sym_pseudoV"], ver
                   4:'_nat',
                   5:'_ncous'}[in_mat]
 
-    with open(tsv_dir + 'weights3A_all_cases_' + '_'.join([m + in_mat_ext for m in methods]) + '.tsv', 'wb') as f:
+    with open(tsv_dir + 'weights'+sc+'_all_cases_' + '_'.join([m + in_mat_ext for m in methods]) + '.tsv', 'wb') as f:
         fields = sorted(wght_res.keys())
         print fields
         w = csv.DictWriter(f, delimiter='\t', fieldnames=fields)
@@ -574,6 +713,127 @@ def scoring3A_weight_behavior(methods=["pseudoV", "pearson", "sym_pseudoV"], ver
             w.writerow({field:wght_res[field][i] for field in fields})
 
     return wght_res, res
+
+def scoring_weight_behavior_var(sc="2A", methods=["js_divergence", "pearson", "mcc"], verbose=False, res=None, in_mat=2,n_clusters=6,n_ssm=600,big_extra_prop=0.1, small_extra_prop=0.02):
+    '''Create the data on how the weights used in subchallenge 3 affect the score using the given scoring methods
+
+    Attributes:
+    :param methods: list of methods to use when evaluating each subchallenge scenario
+    :param verbose: boolean for whether to output details of the scoring metrics
+    '''
+    # True values for each attribute
+    if sc == '3A':
+        if res is None:
+            res = np.transpose(np.asarray([[row[1] for row in scoring3A_behavior(method, verbose=verbose,write=False)] for method in methods]))
+        print res
+        scenarios = ["Truth", "OneCluster", "NClusterOneLineage", "NClusterTwoLineages", "NClusterCorrectLineage",
+                "ParentIsNieceWithChildren", "ParentIsSiblingWithChildren", "ParentIsCousin","ParentIsAunt", "ParentIsGrandparent", "ParentIsSibling",
+                "BigExtraTop", "BigExtraMid", "BigExtraCurBot", "BigExtraNewBot",
+                "SmallExtraTop", "SmallExtraMid", "SmallExtraNewBot", 'SmallExtraCurBot',
+                "SplitClusterMidMultiChild", "SplitClusterMidOneChild", "SplitClusterBotSame", "SplitClusterBotDiff",
+                "MergeClusterTop&Mid", "MergeClusterMid&BotMultiChild", "MergeClusterMid&BotOneChild","MergeClusterBot"]
+
+    # True values for each attribute
+    if sc == '2A':
+        if res is None:
+            out = scoring2A_behavior_var(methods=methods, verbose=verbose,write=False,n_clusters=n_clusters,n_ssm=n_ssm,in_big_extra_prop=big_extra_prop, in_small_extra_prop=small_extra_prop)
+            scenarios = out['sc']
+            res = out['scores']
+         #   res = np.transpose(np.asarray([[row[:,1:2] for row in scoring2A_behavior_var(method=method, verbose=verbose,write=False)] for method in methods]))
+        print "res",res
+     #   print(res.shape)
+     #   print "scenarios", scenarios
+    wght_res = {'Case':scenarios}
+    n_method = len(methods)
+    weights = [0,0.5,1]
+    weight_list = get_weights(n_method, weights)
+    print weight_list
+    for wght in weight_list:
+     #   print("weight",wght)
+        norm_wght = wght / float(sum(wght))
+        scores = np.sum(norm_wght * res, 1)
+    #    print("scores",scores)
+        if set(wght) == {0,weights[-1]} or set(wght) == {weights[-1]}:
+            key = '+'.join([methods[i] for i in range(n_method) if wght[i] == weights[-1]])
+            wght_res[key] = scores
+        else:
+            wght_res[str(wght)] = scores
+
+
+    i
+    with open(tsv_dir + 'weights'+sc+'_all_cases_' + '_'.join([m  for m in methods]) + '_nc'+ str(n_clusters) +'_s'+ str(n_ssm) + '_bep'+str(big_extra_prop)+'_sep'+str(small_extra_prop)+ '.tsv', 'wb') as f:
+        fields = sorted(wght_res.keys())
+        print fields
+        w = csv.DictWriter(f, delimiter='\t', fieldnames=fields)
+        w.writeheader()
+        for i in range(len(scenarios)):
+            w.writerow({field:wght_res[field][i] for field in fields})
+
+    return wght_res, res
+
+def behaviour_2A_extra(n_ssms = 1000 ,methods = ["js_divergence", "pearson", "mcc"] ):
+    out_prop_scores = np.ones(1)
+    print(out_prop_scores.shape)
+    for n in [3,6]:
+        extra_prop = 0
+        while extra_prop <= 0.31:
+            out = scoring2A_behavior_var(methods=methods, scenarios = ["BigExtra"],verbose=True,write=False,n_clusters=n,n_ssm=n_ssms,in_big_extra_prop=extra_prop, in_small_extra_prop=0)
+            scores = out['scores']
+            params = np.full(shape=(scores.shape[0],2),fill_value=extra_prop)
+            params[:,1] = n
+            scores = np.hstack((scores,params))
+            if(out_prop_scores.shape[0] == 1):
+                out_prop_scores = scores
+            out_prop_scores = np.vstack((out_prop_scores,scores))
+           # print("scores", scores)
+            extra_prop += 0.05
+    print(out_prop_scores)
+    np.savetxt("out_prop.txt",out_prop_scores,delimiter="\t")
+
+def behaviour_2A_merged(n_ssms=1000,  methods = ["js_divergence", "pearson", "mcc"], scenario=['MergeClusterBot'] ):
+    out_prop_scores = np.ones(1)
+    print(out_prop_scores.shape)
+    for n in [3,6]:
+        prop_merged = 0
+        while prop_merged < 0.51:
+            out = scoring2A_behavior_var(methods=methods, scenarios = ["MergeClusterBot"],verbose=True,write=False,n_clusters=n,n_ssm=n_ssms, set_prop=prop_merged)
+            print(out)
+            scores = out['scores']
+            params = np.full(shape=(scores.shape[0],2),fill_value=prop_merged)
+            params[:,1] = n
+            scores = np.hstack((scores,params))
+            if(out_prop_scores.shape[0] == 1):
+                out_prop_scores = scores
+            out_prop_scores = np.vstack((out_prop_scores,scores))
+           # print("scores", scores)
+            prop_merged += 0.1
+    print(out_prop_scores)
+    np.savetxt("out_prop_merged.txt",out_prop_scores,delimiter="\t")
+
+def behaviour_2A_split(n_ssms=1000,  methods = ["js_divergence", "pearson", "mcc"], scenario=['SplitClusterBot'] ):
+    out_prop_scores = np.ones(1)
+    print(out_prop_scores.shape)
+    for n in [3,6]:
+        prop_split = 0.1
+        while prop_split < 0.51:
+            in_prop_split=0.1
+            while in_prop_split < 0.51:
+                print("prop_split", prop_split)
+                out = scoring2A_behavior_var(methods=methods, scenarios = ["SplitClusterBot"],verbose=True,write=False,n_clusters=n,n_ssm=n_ssms, in_prop_split=in_prop_split, set_prop=prop_split)
+             #   print(out)
+                scores = out['scores']
+                params = np.full(shape=(scores.shape[0],3),fill_value=prop_split)
+                params[:,1] = n
+                params[:,2] = in_prop_split
+                scores = np.hstack((scores,params))
+                if(out_prop_scores.shape[0] == 1):
+                    out_prop_scores = scores
+                out_prop_scores = np.vstack((out_prop_scores,scores))
+               # print("scores", scores)
+                in_prop_split += 0.1
+            prop_split += 0.1
+    print(out_prop_scores)
+    np.savetxt("out_prop_split.txt",out_prop_scores,delimiter="\t")
 
 def get_weights(n_objects, weights, cur_weight=None, list_weights= list()):
     """Generate a list of all possible unique combinations of weight assignments from the given list
@@ -771,6 +1031,7 @@ def get_ccm(scenario, t_ccm=None, t_clusters=None, size_clusters=100, n_clusters
         for i in range(n_clusters):
             clusters[size_clusters*i:size_clusters*i+num_extra,i] = 0
             clusters[size_clusters*i:size_clusters*i+num_extra,n_clusters] = 1
+            print(clusters)
         return np.dot(clusters,clusters.T)
     else:
         raise LookupError("Invalid scenario")
@@ -1045,16 +1306,19 @@ if __name__ == '__main__':
         '1B':['orig', 'normalized'],
         '1C':['abs', 'sqr'],
         '2A':['mcc'],
-        '2':["orig",
-            "sqrt",
-            "pseudoV",
-            "sym_pseudoV",
-            "spearman",
-            "pearson",
+         '2':["pearson",
             "js_divergence",
-			"aupr",
-            "mcc",
-            "default"],
+             "mcc"],
+   #      '2':["orig",
+   #          "sqrt",
+   #          "pseudoV",
+   #          "sym_pseudoV",
+   #          "spearman",
+   #          "pearson",
+   #          "js_divergence",
+			# "aupr",
+   #          "mcc",
+   #          "default"],
         '3': ['pseudoV',
               'sym_pseudoV',
               'pearson',
@@ -1072,20 +1336,36 @@ if __name__ == '__main__':
         print 'Scoring 1B Behavior with method ' + m + '...'
 #        scoring1B_behavior(m)
 
+
     for m in methods['1C']:
         print 'Scoring 1C Behavior with method ' + m + '...'
 #        scoring1C_behavior(m)
     for m in methods['2']:
         print 'Scoring 2A Behavior with method ' + m + '...'
-#        scoring2A_behavior(method=m, verbose=True, tst_closest_reassign=False, tst_big_mat=True, tst_rand_reassign=False)
-
+  #      out=scoring2A_behavior_var(method=m, verbose=True,n_ssm=600,n_clusters=6,big_extra_num=15,write=False,rep=10)
+   #     print(out)
         print 'Scoring 2B Behavior with method ' + m + '...'
 #        scoring2B_behavior(method=m, verbose=True, tst_betas=True, tst_prob_mod_err=True, tst_prob_mod=True)
 
 #    scoring2A_behavior(method='pearson', verbose=True, tst_closest_reassign=False, tst_big_mat=True, tst_rand_reassign=False)
     print 'Scoring 3A Behavior...'
-    scoring3A_behavior_all(verbose=True)
-    scoring3A_behavior(method="mcc", verbose=True,pc_amount="none", full_matrix=False, in_mat=1)
+  #  scoring3A_behavior_all(verbose=True)
+  #  scoring3A_behavior(method="mcc", verbose=True,pc_amount="none", full_matrix=False, in_mat=1)
 
     print 'Scoring 3A Behavior using multiple metrics with different weights...'
-#    scoring3A_weight_behavior(verbose=True)
+    behaviour_2A_split(n_ssms=1000)
+    behaviour_2A_merged(n_ssms=1000)
+    behaviour_2A_extra(methods=['js_divergence','mcc','pearson'],n_ssms=1000)
+  #  out=scoring2A_behavior_var(methods=['js_divergence','mcc','pearson'], verbose=True,n_ssm=600,n_clusters=6,big_extra_num=15,write=False,rep=10)
+  #scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'])
+    # scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'],n_clusters=6,n_ssm=1000)
+    # scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'],n_clusters=6,n_ssm=1000,big_extra_prop=0.15)
+    # scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'],n_clusters=6,n_ssm=1000,small_extra_prop=0.01)
+    # scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'],n_clusters=6,n_ssm=1000,small_extra_prop=0.05)
+    # scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'],n_clusters=6,n_ssm=1000,small_extra_prop=0.2)
+
+    # scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'],n_clusters=3,n_ssm=1000)
+    # scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'],n_clusters=3,n_ssm=1000,big_extra_prop=0.15)
+    # scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'],n_clusters=3,n_ssm=1000,small_extra_prop=0.01)
+#print(inspect.get_members(get_ccm_nvar))
+#get_ccm_nvar('SplitClusterBot',size_clusters=[3,4,4], n_clusters=3, prop_split=float(0.5))
