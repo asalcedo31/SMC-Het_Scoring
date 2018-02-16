@@ -985,7 +985,7 @@ def calculate3File(pred_ccm, pred_ad, truth_ccm, truth_ad, baseline_file=None):
     del pred_c, truth_c
     gc.collect()
     score = np.mean(scores)
-    return set_to_zero(1 - (score / baseline))
+    return [score,baseline,set_to_zero(1 - (score / baseline))]
 
 
 def calculate3Final(pred_ccm, pred_ad, truth_ccm, truth_ad, method="default"):
@@ -1081,9 +1081,9 @@ def calculate3Final(pred_ccm, pred_ad, truth_ccm, truth_ad, method="default"):
 
 
 #imaad: I commented out the return of two scorse because we will be going with n_score_permute
-#    return [set_to_zero(1 - (score / max(one_score, n_score))),set_to_zero(1 - (score / max(one_score, n_score_permute)))]
-    return [score,one_score,n_score_permute,set_to_zero(1 - (score / max(one_score, n_score_permute)))]
-#    return set_to_zero(1 - (score / max(one_score, n_score_permute)))
+#  #  return [set_to_zero(1 - (score / max(one_score, n_score))),set_to_zero(1 - (score / max(one_score, n_score_permute)))]
+#    return [score,one_score,n_score_permute,set_to_zero(1 - (score / max(one_score, n_score_permute)))]
+    return set_to_zero(1 - (score / max(one_score, n_score_permute)))
 def makeCMatrix(*matrices):
     # perform (1 - *matrices) without loading all the matrices into memory
     shape = matrices[0].shape
