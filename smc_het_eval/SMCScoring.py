@@ -11,7 +11,7 @@ from scoring_harness_optimized import *
 from permutations import *
 import gc
 import traceback
-from ast import literal_eval
+import pdb
 
 # blo
 import time
@@ -262,7 +262,7 @@ def validate2Afor3A(data, nssms, mask=None):
     return validate2A(data, nssms, return_ccm=False, mask=mask)
 
 def validate2B(filename, nssms, mask=None):
-    print("validating 2B", filename,nssms)
+  
     ccm = np.zeros((nssms, nssms))
     try:
         if os.path.exists(filename):
@@ -271,7 +271,6 @@ def validate2B(filename, nssms, mask=None):
                 gzipfile = gzip.open(str(filename), 'r')
             else:
                 gzipfile = open(str(filename), 'r')
-                print("shape",gzipfile.shape)
             ccm_i = 0
             for i, line in enumerate(gzipfile):
                 if mask == None:
@@ -286,7 +285,6 @@ def validate2B(filename, nssms, mask=None):
             gzipfile.close()
             #print "done load " + filename #debug
         else:
-            print("does not exist")
             # TODO - optimize with line by line
             data = StringIO.StringIO(filename)
             truth_ccm = np.loadtxt(data, ndmin=2)
@@ -388,66 +386,6 @@ def calculate2(pred, truth, full_matrix=True, method='default', pseudo_counts=No
             score = set_to_zero((score - worst_score) / (1 - worst_score))
         return score
 
-def calculate_baseline(truthfiles, vcf, reps=100, seed=182973423):
-    f = calculate2_js_divergence
-    nssms = verify(vcf, "input VCF",parseVCF2and3, sample_mask=None)
-    tout = []
-    for truthfile, valfunc in zip(truthfiles,challengeMapping['3B']['val_funcs']):
-        targs = tout + nssms[1]
-        tout.append(verify(truthfile, "truth file for Challenge %s" % ('3B'), valfunc, *targs, mask=None))
-    truth_ccm = tout[0]
-    truth_ad = tout[1]
-    truth_c = makeCMatrix(truth_ccm, truth_ad, truth_ad.T)
-
-    one_scores = []
-    one_ad = mb.get_ad('OneCluster', nssms=truth_ad.shape[0])
-    one_scores.append(f(one_ad, truth_ad))
-    one_scores.append(f(one_ad.T, truth_ad.T))
-    truth_c = makeCMatrix(truth_ccm, truth_ad, truth_ad.T)
-    one_ccm = mb.get_ccm('OneCluster', nssms=truth_ccm.shape[0])
-    one_c = makeCMatrix(one_ccm, one_ad, one_ad.T)
-    one_scores.append(f(one_c, truth_c))
-    print "DEBUG: one_scores: ", one_scores
-    del one_c, truth_c, one_ad, one_ccm
-
-    n_scores = []
-    n_ad = mb.get_ad('NClusterOneLineage', nssms=truth_ad.shape[0])
-    n_scores.append(f(n_ad, truth_ad))
-    n_scores.append(f(n_ad.T, truth_ad.T))
-    truth_c = makeCMatrix(truth_ccm, truth_ad, truth_ad.T)
-    n_ccm = mb.get_ccm('NClusterOneLineage', nssms=truth_ccm.shape[0])
-    n_c = makeCMatrix(n_ccm, n_ad, n_ad.T)
-    n_scores.append(f(n_c, truth_c))
-    print "DEBUG: n_scores: ", n_scores
-
-
-    n_scores_permute = []
-    n_scores_permute_1 = []
-
-    n_scores_permute_2 = []     # transpose permutations
-    n_ad = mb.get_ad('NClusterOneLineage', nssms=truth_ad.shape[0])
-    np.random.seed(seed)
-
-    for i in range(reps):
-        pos = np.random.permutation(range(0, truth_ad.shape[0]))
-        n_ad_random = n_ad[:, pos]
-        n_scores_permute_1.append(f(n_ad_random, truth_ad))
-        n_scores_permute_2.append(f(n_ad_random.T, truth_ad.T))
-   # print "DEBUG: n_scores_permute_1: ", n_scores_permute_1
-  #  print "DEBUG: n_scores_permute_2: ", n_scores_permute_2
-   # np.savetxt('permuted', n_scores_permute_1)
-    n_scores_permute.append(np.mean(n_scores_permute_1))
-    n_scores_permute.append(np.mean(n_scores_permute_2))
-    # end of temporary code for mutation permutations of NCluster
-    # ----------------------------------------------------------
-
-    n_scores_permute.append(n_scores[2])
-  #  print "DEBUG: n_scores_permute: ", n_scores_permute
-    n_score_permute = np.mean(n_scores_permute)
-    one_score = np.mean(one_scores)
-
-    return [one_score, n_score_permute, max(n_score_permute,one_score)]
-
 #### METRICS ###############################################################################################
 
 def calculate2_quaid(pred, truth):
@@ -546,7 +484,7 @@ def calculate2_js_divergence(pred, truth, rnd=1e-50, full_matrix=True, sym=True)
     # Note: it is ok to do this after making the matrix upper triangular
     # since the bottom triangle of the matrix will not affect the score
 
-    size = np.array(pred_cp.shape)[1]
+    size = np.array(pred_cp.shape)[0]
     res = 0 # result to be returned
 
     # do one row at a time to reduce memory usage
@@ -969,121 +907,66 @@ def checkForBadTriuIndices(*matrices):
     else:
         raise ValidationError('Unequal shapes passed to checkForBadTriuIndices')
     return not fail
-def calculate3File(pred_ccm, pred_ad, truth_ccm, truth_ad, baseline_file=None):
-    baseline_fh = open(str(baseline_file),'r')
-    baseline = literal_eval(baseline_fh.read())[2]
-    print "BASELINE: ", baseline
-    f = calculate2_js_divergence
-    
-    scores = []
-    scores.append(f(pred_ad, truth_ad))
-    scores.append(f(pred_ad.T, truth_ad.T))
-    truth_c = makeCMatrix(truth_ccm, truth_ad, truth_ad.T)
-    pred_c = makeCMatrix(pred_ccm, pred_ad, pred_ad.T)
-    scores.append(f(pred_c, truth_c))
-    print "DEBUG: scores: ", scores
-    del pred_c, truth_c
-    gc.collect()
-    score = np.mean(scores)
-    return [score,baseline,set_to_zero(1 - (score / baseline))]
 
+def make_all(ccm,ad):
+    assert np.allclose(ccm.diagonal(), np.ones((ccm.shape[0])))
+    c = makeCMatrix(ccm,ad,ad.T)
+   #print np.min(c)
+    if(np.min(c)<0):
+        np.savetxt('broken_ccm.txt', ccm, fmt='%d')
+        np.savetxt('broken_ad.txt', ad, fmt='%d')
+        np.savetxt('broken_cous.txt', c, fmt='%d')
 
-def calculate3Final(pred_ccm, pred_ad, truth_ccm, truth_ad, method="default"):
-    f = calculate2_js_divergence
-    
-    scores = []
-    scores.append(f(pred_ad, truth_ad))
-    scores.append(f(pred_ad.T, truth_ad.T))
-    truth_c = makeCMatrix(truth_ccm, truth_ad, truth_ad.T)
-    pred_c = makeCMatrix(pred_ccm, pred_ad, pred_ad.T)
-    scores.append(f(pred_c, truth_c))
-    print "DEBUG: scores: ", scores
-    del pred_c, truth_c
-    gc.collect()
+    return np.hstack((ccm,ad,ad.T,c))
 
-    one_scores = []
-    one_ad = mb.get_ad('OneCluster', nssms=truth_ad.shape[0])
-    one_scores.append(f(one_ad, truth_ad))
-    one_scores.append(f(one_ad.T, truth_ad.T))
-    truth_c = makeCMatrix(truth_ccm, truth_ad, truth_ad.T)
-    one_ccm = mb.get_ccm('OneCluster', nssms=truth_ccm.shape[0])
-    one_c = makeCMatrix(one_ccm, one_ad, one_ad.T)
-    one_scores.append(f(one_c, truth_c))
-    print "DEBUG: one_scores: ", one_scores
-    del one_c, truth_c, one_ad, one_ccm
+def calculate3Final(pred_ccm, pred_ad, truth_ccm, truth_ad, method="js_divergence"):
+    func_dict = {
+    "orig"           : calculate2_orig,
+    "sqrt"           : calculate2_sqrt,
+    "pseudoV"        : calculate2_pseudoV,
+    "sym_pseudoV"    : calculate2_sym_pseudoV,
+    "js_divergence"  : calculate2_js_divergence,
+    "spearman"       : calculate2_spearman,
+    "pearson"        : calculate2_pearson,
+    "aupr"           : calculate2_aupr,
+    "mcc"            : calculate2_mcc
+    }
+    f = func_dict.get(method, None)
+    #f = method
+  #  pdb.set_trace()
+
+    t_all = make_all(truth_ccm,truth_ad)
+    pred_all = make_all(pred_ccm, pred_ad)
+    score = f(t_all,pred_all)
+   # np.savetxt('truth_ccm.txt', truth_ccm, fmt='%d')
+   # np.savetxt('truth_ad.txt', truth_ad, fmt='%d')
+ #   print "DEBUG: score: ", score
+    del pred_all
     gc.collect()
 
-    n_scores = []
-    n_ad = mb.get_ad('NClusterOneLineage', nssms=truth_ad.shape[0])
-    n_scores.append(f(n_ad, truth_ad))
-    n_scores.append(f(n_ad.T, truth_ad.T))
-    truth_c = makeCMatrix(truth_ccm, truth_ad, truth_ad.T)
-    n_ccm = mb.get_ccm('NClusterOneLineage', nssms=truth_ccm.shape[0])  #just a diagonal matrix
-    n_c = makeCMatrix(n_ccm, n_ad, n_ad.T)
-    n_scores.append(f(n_c, truth_c))
-    print "DEBUG: n_scores: ", n_scores
-
-    n_scores_permute = []
-    # this is commented until we fix the "all permutations" case for 3B using JS divergence implementations
-    # in the meantime, use the next temporary code below to calculate mutation permutations to get n_scores_permutated
-#    n_scores_permute.append(ccm_permute_N_cluster(truth_ad))
-#    n_scores_permute.append(ccm_permute_N_cluster(truth_ad.T))
-
-    # ----------------------------------------------------------
-    # beginning of temporary code for mutation permutations of NCluster
-    # at this point, n_ad is an upper-right triangular full of 1s, and rest are 0s
-    # n_ad has 0s along diagonal
-    n_scores_permute_1 = []
-    n_scores_permute_2 = []     # transpose permutations
-
-#    # each iteration of i sets row i to all 0s
-#    #   i.e. "flattening" NClusterOneLineage into NClusterNLineage
-#    for i in list(reversed(range(1, truth_ad.shape[0]))):
-#        for j in range(i, truth_ad.shape[0]):
-#            n_ad[i,j] = 0
-#        n_scores_permute_1.append(f(n_ad, truth_ad))
-#        n_scores_permute_2.append(f(n_ad.T, truth_ad.T))
-    np.random.seed(182973423)
-    for i in range(100):
-        pos = np.random.permutation(range(0, truth_ad.shape[0]))
-        n_ad_random = n_ad[:, pos]
-        n_scores_permute_1.append(f(n_ad_random, truth_ad))
-        n_scores_permute_2.append(f(n_ad_random.T, truth_ad.T))
-    print "DEBUG: n_scores_permute_1: ", n_scores_permute_1
-    print "DEBUG: n_scores_permute_2: ", n_scores_permute_2
-
-    n_scores_permute.append(np.mean(n_scores_permute_1))
-    n_scores_permute.append(np.mean(n_scores_permute_2))
-    # end of temporary code for mutation permutations of NCluster
-    # ----------------------------------------------------------
-
-    n_scores_permute.append(n_scores[2])
-    print "DEBUG: n_scores_permute: ", n_scores_permute
-
-    del n_c, truth_c, n_ad, n_ccm, n_scores_permute_1, n_scores_permute_2
+    one_ad = np.zeros(truth_ad.shape)
+    one_ccm = np.ones(truth_ccm.shape)
+    one_all = make_all(one_ccm, one_ad)
+    one_score = f(t_all, one_all)
+  #  print "DEBUG: one_score: ", one_score
+    del one_all, one_ad, one_ccm
     gc.collect()
 
-    score = np.mean(scores)
-    one_score = np.mean(one_scores)
-    n_score = np.mean(n_scores)
-    n_score_permute = np.mean(n_scores_permute)
+    n_score = []
+    n_ad = np.zeros(truth_ad.shape)
+    n_ccm = np.identity(truth_ccm.shape[0])
+    n_all = make_all(n_ccm,n_ad)
+    n_score = f(t_all,n_all)
 
-    # TESTING: This is ignoring the cousin coclustering matrix when calculating scoresq
-#    score = np.mean(scores[0:2])
-#    one_score = np.mean(one_scores[0:2])
-#    n_score = np.mean(n_scores[0:2])
-#    n_score_permute = np.mean(n_scores_permute[0:2])
-    # TESTING: Using median instead of mean
-#    score = np.median(scores)
-#    one_score = np.median(one_scores)
-#    n_score = np.median(n_scores)
-#    n_score_permute = np.median(n_scores_permute)
+ #   print "DEBUG: n_score: ", n_score
+    #print method, "\n"
+    if method in ['aupr','mcc']:  
+        worst_score = min(one_score, n_score)
+      #  print "aupr or mcc: ", set_to_zero((( (score - worst_score)/ (1-worst_score))+1)/2)
+        return [score, one_score, n_score, set_to_zero((( (score - worst_score)/ (1-worst_score))+1)/2)]
+    else:
+        return [score, one_score, n_score, set_to_zero(((1 - (score / max(one_score, n_score)))+1)/2)]
 
-
-#imaad: I commented out the return of two scorse because we will be going with n_score_permute
-#  #  return [set_to_zero(1 - (score / max(one_score, n_score))),set_to_zero(1 - (score / max(one_score, n_score_permute)))]
-#    return [score,one_score,n_score_permute,set_to_zero(1 - (score / max(one_score, n_score_permute)))]
-    return set_to_zero(1 - (score / max(one_score, n_score_permute)))
 def makeCMatrix(*matrices):
     # perform (1 - *matrices) without loading all the matrices into memory
     shape = matrices[0].shape
@@ -1093,9 +976,11 @@ def makeCMatrix(*matrices):
         if (not equalShapes):
             break
     if (equalShapes):
+
         output = np.ones([shape[0], shape[0]])
         for i in xrange(shape[0]):
-            output[i, ] -= reduce(lambda x, y: x + y, [z[i, ] for z in matrices])
+            output[i, ] -= reduce(lambda x, y: x + y, [z[i, ] for z in matrices]
+                )
     else:
         raise ValidationError('Unequal shapes passed to makeCMatrix')
     return output
@@ -1568,53 +1453,51 @@ def makeMasks(vcfFile, sample_fraction):
 
     return { 'samples' : sample_mask, 'truths' : truth_mask }
 
-challengeMapping = {}
-def make_challenge_mapping(): 
-    global challengeMapping
-    challengeMapping = {
-        '1A' : {
-            'val_funcs' : [validate1A],
-            'score_func' : calculate1A,
-            'vcf_func' : None,
-            'filter_func' : None
-        },
-        '1B' : {
-            'val_funcs' : [validate1B],
-            'score_func' : calculate1B,
-            'vcf_func' : None,
-            'filter_func' : None
-        },
-        '1C' : {
-            'val_funcs' : [validate1C],
-            'score_func' : calculate1C,
-            'vcf_func' : parseVCF1C,
-            'filter_func' : None
-        },
-        '2A' : {
-            'val_funcs' : [om_validate2A],
-            'score_func' : om_calculate2A,
-            'vcf_func' : parseVCF2and3,
-            'filter_func' : filterFPs
-        },
-        '2B' : {
-            'val_funcs' : [validate2B],
-            'score_func' : calculate2,
-            'vcf_func' : parseVCF2and3,
-            'filter_func' : filterFPs
-        },
-        '3A' : {
-            'val_funcs' : [validate2Afor3A, validate3A],
-            'score_func' : calculate3File if args.baseline is not None else calculate3Final,
-            'vcf_func' : parseVCF2and3,
-            'filter_func' : filterFPs
-        },
-        '3B' : {
-            'val_funcs' : [validate2B, validate3B],
-            'score_func' : calculate3File if args.baseline is not None else calculate3Final,
-            'vcf_func' : parseVCF2and3,
-            'filter_func' : filterFPs
-        },
-    }
+challengeMapping = {
+    '1A' : {
+        'val_funcs' : [validate1A],
+        'score_func' : calculate1A,
+        'vcf_func' : None,
+        'filter_func' : None
+    },
+    '1B' : {
+        'val_funcs' : [validate1B],
+        'score_func' : calculate1B,
+        'vcf_func' : None,
+        'filter_func' : None
+    },
+    '1C' : {
+        'val_funcs' : [validate1C],
+        'score_func' : calculate1C,
+        'vcf_func' : parseVCF1C,
+        'filter_func' : None
+    },
+    # According to Quaid, there is no need to filter false positves with the new method developed for scoring subchallenge 2A
+    '2A' : {
+        'val_funcs' : [om_validate2A],
+        'score_func' : om_calculate2A,
+        'vcf_func' : parseVCF2and3,
+        'filter_func' : None
+    },
+    '2B' : {
+        'val_funcs' : [validate2B],
+        'score_func' : calculate2,
+        'vcf_func' : parseVCF2and3,
+        'filter_func' : filterFPs
+    },
+    '3A' : {
+        'val_funcs' : [validate2Afor3A, validate3A],
+        'score_func' : calculate3Final,
+        'vcf_func' : parseVCF2and3,
+        'filter_func' : filterFPs
+    },
+    '3B' : {
+        'val_funcs' : [validate2B, validate3B],
+        'score_func' : calculate3Final,
+        'vcf_func' : parseVCF2and3,
+        'filter_func' : filterFPs
+    },
+}
 
 def verifyChallenge(challenge, predfiles, vcf):
     #global err_msgs
@@ -1639,7 +1522,7 @@ def verifyChallenge(challenge, predfiles, vcf):
     return "Valid"
 
  
-def scoreChallenge(challenge, predfiles, truthfiles, vcf, baseline_file, sample_fraction=1.0, rnd=1e-50):
+def scoreChallenge(challenge, predfiles, truthfiles, vcf, sample_fraction=1.0, rnd=1e-50):
     
     
     
@@ -1656,7 +1539,7 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, baseline_file, sample_
         nssms = [[], []]
 
     mem('VERIFY VCF %s' % vcf)
-
+    
     # total number of predicted lines?
     printInfo('total lines -> ' + str(nssms[0]))
     # total number of truth lines
@@ -1669,7 +1552,6 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, baseline_file, sample_
     tout = []
     pout = []
     tpout = []
-
     for predfile, truthfile, valfunc in zip(predfiles, truthfiles, challengeMapping[challenge]['val_funcs']):
         if is_gzip(truthfile) and challenge not in ['2B', '3B']:
             err_msgs.append('Incorrect format, must input a text file for challenge %s' % challenge)
@@ -1681,7 +1563,10 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, baseline_file, sample_
         if challenge in ['2A']:
             if valfunc is om_validate2A:
                 try:
+                    #nssms[2] is an array of true ssms 
                     vout, raw = verify2A(predfile, truthfile, "Combined truth and pred file for Challenge 2A", *vcfargs, filter_mut=nssms[2], mask=masks['truths'], subchallenge="3A")
+                    printInfo('length vout', vout.shape)
+                    printInfo('length raw', raw)
                 except SampleError as e:
                     raise e
 
@@ -1754,6 +1639,7 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, baseline_file, sample_
         printInfo('tout sum -> ', np.sum(tout[0]))
         printInfo('pout sum -> ', np.sum(pout[0]))
 
+
     if challengeMapping[challenge]['filter_func']:
         pout = [challengeMapping[challenge]['filter_func'](x, nssms[2]) for x in pout]
         printInfo('PRED DIMENSION(S) -> ', [p.shape for p in pout])
@@ -1762,6 +1648,8 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, baseline_file, sample_
 
         printInfo('tout sum filtered -> ', np.sum(tout[0]))
         printInfo('pout sum filtered -> ', np.sum(pout[0]))
+        printInfo('tout shape -> ',tout[0].shape)
+        printInfo('pout shape -> ', pout[0].shape)
 
         if challenge in ['2B']:
             pout = [ add_pseudo_counts(*pout) ]
@@ -1781,8 +1669,8 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, baseline_file, sample_
         pout[0] = np.dot(pout[0], pout[0].T)
         tout[0] = np.dot(tout[0], tout[0].T)
 
-    if challenge in ['3A','3B'] and baseline_file is not None:
-        return challengeMapping[challenge]['score_func'](*(pout + tout), baseline_file=baseline_file)
+        return challengeMapping[challenge]['score_func'](*(pout + tout), method="js_divergence")
+
     return challengeMapping[challenge]['score_func'](*(pout + tout))
 
 def printInfo(*string):
@@ -1834,15 +1722,13 @@ if __name__ == '__main__':
     parser.add_argument("--predfiles", nargs="+")
     parser.add_argument("--truthfiles", nargs="*")
     parser.add_argument("--vcf")
-    parser.add_argument("--baseline", default=None)
     parser.add_argument("-o", "--outputfile")
     parser.add_argument('-v', action='store_true', default=False)
     parser.add_argument('--approx', nargs=2, type=float, metavar=('sample_fraction', 'iterations'), help='sample_fraction ex. [0.45, 0.8] | iterations ex. [4, 20, 100]')
     parser.add_argument('--approx_seed', nargs=1, type=int, default=[75])
     parser.add_argument('--rnd', nargs=1, type=float, default=[1e-50])
     args = parser.parse_args()
-    make_challenge_mapping()
-    print("challengeMapping:", challengeMapping)
+
     if args.pred_config is not None and args.truth_config is not None:
         with open(args.pred_config) as handle:
             pred_config = {}
@@ -1922,12 +1808,9 @@ if __name__ == '__main__':
             print('')
             res = adj_final(mean)
         # REAL SCORE
-        elif args.challenge=='calcBaseline':
-            res = calculate_baseline(args.truthfiles, args.vcf, reps=100)
-
         else:
             print('Running Challenge %s' % args.challenge)
-            res = scoreChallenge(args.challenge, args.predfiles, args.truthfiles, args.vcf, args.baseline, rnd=args.rnd[0])
+            res = scoreChallenge(args.challenge, args.predfiles, args.truthfiles, args.vcf, rnd=args.rnd[0])
             print res
             #print('SCORE -> %.16f' % res)
 
