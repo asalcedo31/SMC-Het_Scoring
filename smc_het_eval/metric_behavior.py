@@ -1,8 +1,10 @@
 from SMCScoring import *
 from make_ccm import *
+from make_ad_nvar import *
 import numpy as np
 import csv
 import inspect as inspect
+import sys
 
 tsv_dir = './scoring_metric_data/text_files/' # directory to save tsv's to
 
@@ -175,30 +177,39 @@ def scoring1C_behavior(method='abs'):
     f.close()        
 
 
-def rand_size_clusters(n_clusters,n_ssm):
+def rand_size_clusters(n_clusters,n_ssm, safe= True):
     p_clusters = np.zeros(n_clusters)
-    while (np.sum(p_clusters)==0 or np.sum(p_clusters/np.sum(p_clusters))>1):
-        p_clusters = map(lambda x: np.random.normal(loc=10, scale=2), range(n_clusters))
-    size_clusters = np.random.multinomial(n_ssm, p_clusters/np.sum(p_clusters))
+    if safe == False:
+        while (np.sum(p_clusters)==0 or np.sum(p_clusters/np.sum(p_clusters))>1 ):
+            p_clusters = map(lambda x: np.random.normal(loc=10, scale=2), range(n_clusters))
+        size_clusters = np.random.multinomial(n_ssm, p_clusters/np.sum(p_clusters))
+    else:
+        while (np.sum(p_clusters)==0 or np.sum(p_clusters/np.sum(p_clusters))>1  or np.any(size_clusters == 0)):
+            p_clusters = map(lambda x: np.random.normal(loc=10, scale=2), range(n_clusters))
+            size_clusters = np.random.multinomial(n_ssm, p_clusters/np.sum(p_clusters))
+    
     return(size_clusters)    
 
 def set_prop_merged_split(prop,scenario,n_ssm,n_clusters):
-   # print("scenario: ", scenario)
-    if (scenario=='MergeClusterBot'):
+ #   pdb.set_trace()
+    print("scenario: ", scenario)
+
+    if (scenario=='MergeClusterMid&BotOneChild'):
         merged_ssm = int(prop*n_ssm)
         ssm_other = n_ssm-merged_ssm
         size_merged = rand_size_clusters(2,merged_ssm)
      #   print("size_merged", size_merged)
         size_others = rand_size_clusters(n_clusters-2, ssm_other)
-    #    print(size_others)
-    elif (scenario=='SplitClusterBot'):
+        size_all = np.concatenate((size_others[0:2], [size_merged[0]],size_others[2:4],[size_merged[1]]))
+        print(size_others)
+    elif (scenario=='SplitClusterBotDiff'):
         merged_ssm = int(prop*n_ssm)
         ssm_other = n_ssm-merged_ssm
         size_merged = rand_size_clusters(1,merged_ssm)
      #   print("size_merged", size_merged)
         size_others = rand_size_clusters(n_clusters-1, ssm_other)
     #    print(size_others)    
-    size_all = np.concatenate((size_others,size_merged))
+    
    # print(size_all)
   #  print(np.sum(size_all))
     return(size_all)
@@ -251,36 +262,17 @@ def scoring2A_behavior_var(methods='js_divergence', scenarios = ["SplitClusterBo
         f.write(str(big_extra_prop)+str(small_extra_prop)+'\t'+str(prop_split)+'\n')
        # print("scenarios")
         for sc in scenarios:  
-         #   print("sc", sc)  
-        #   print("prop_split",prop_split)
             t_ccm, t_clusters = get_ccm_nvar('Truth',size_clusters=size_clusters, n_clusters=n_clusters, big_extra_prop=big_extra_prop)
-            if (sc == "OneCluster" or sc == "NCluster"):
-                ccm = get_ccm_nvar(sc , t_ccm=t_ccm, t_clusters=t_clusters, size_clusters=size_clusters, prop_split=0.5, n_clusters=n_clusters, big_extra_prop = big_extra_prop, small_extra_prop = small_extra_prop)
-            else:
-                ccm, clusters = get_ccm_nvar(sc , t_ccm=t_ccm, t_clusters=t_clusters, size_clusters=size_clusters, prop_split=prop_split, n_clusters=n_clusters, big_extra_prop = big_extra_prop, small_extra_prop = small_extra_prop)
+            ccm, clusters = get_ccm_nvar(sc , t_ccm=t_ccm, t_clusters=t_clusters, size_clusters=size_clusters, prop_split=prop_split, n_clusters=n_clusters, big_extra_prop = big_extra_prop, small_extra_prop = small_extra_prop)
+            if (sc != "OneCluster" and sc != "NCluster"):
                 ccm, clusters = closest_rand_reassign(clusters)
-        #    print("sc2",sc)
-        #    print(t_ccm.shape, ccm.shape)
             out = np.array((sc,i),dtype='S20,int')
             score =  [calculate2(ccm, t_ccm, method=method) for method in methods]
             score = map(lambda x: 0 if np.isnan(x) else x , score)
-      #      print(score)
             out = np.array((sc,i,score),dtype=np.dtype([('sc','S40'),('rep','int'),('scores', str(len(methods))+'float32')]))
-    #        ccm = get_ccm(sc ,t_ccm=t_ccm, t_clusters=t_clusters, size_clusters=size_clusters, n_clusters=n_clusters, big_extra_num=big_extra_num)
-            # calculate the score for the given scenario
-            
-         #   print(out)
-
- #           res.append([sc,i])
             res.append(out)
-    res = np.array(res)
-    
-    
-    f.close()
- #   print(res)
-  #  print(res[['scores']])
-   # print(res.shape)
-     
+    res = np.array(res) 
+    f.close() 
     return(res)
 
 
@@ -558,7 +550,120 @@ def scoring2B_behavior(tst_betas=True, tst_prob_mod=True, tst_prob_mod_err=True,
                     for key, val in error_data.iteritems():
                         writer.writerow([key] + val[std])
 
+def collapse_clusters_2A(clusters):
+    out = []
+    clust_num = clusters.shape[1]
+    for i in range(clusters.shape[0]):
+        idx = np.where(clusters[i,]> 0)[0]
+        out.append(idx[0]+1)
+    return out
 
+def scoring3A_behavior_var(methods='js_divergence', in_scenarios = None, verbose=False,n_ssm=600,n_clusters=6,in_big_extra_prop=0.1,in_small_extra_prop=0.025,write=True,rep=100, in_prop_split = 0.5, set_prop = None, rand = False):
+    '''Test the scoring behaviour of different metrics for evaluating Sub-Challenge 2, under various conditions.
+
+    :param method: scoring metric to use
+    :param verbose: boolean for whether to print output on the status of the function
+    '''
+
+    # Test the scoring behavior when the predicted CCM comes from one of the presepeficied 'mistake scenarios'
+    # i.e. mistakes in the co-clustering assignment that we expect people to make
+    if verbose:
+     #   print('Testing scoring for SC2 using the ' + method + ' scoring metric:')
+        print('Scoring behavior for mistake scenarios with 6 clusters...')
+    if (in_scenarios is None):
+        scenario_set = scenarios
+    else:
+        scenario_set = in_scenarios
+    print'For scenarios', scenario_set
+    #big_extra_num = 33 # number of mutations to add in the BigExtra case
+    # True CCM:
+
+     
+  #  scenarios = [ "OneCluster", "NCluster", "SmallExtra", "BigExtra","SplitClusterMidMultiChild", "SplitClusterMidOneChild", "SplitClusterBot",
+   #             "MergeClusterTop&Mid", "MergeClusterMid&BotMultiChild", "MergeClusterMid&BotOneChild","MergeClusterBot"]# mistake scenarios to be tested
+    res3A = []
+    res2A = []
+    f = open(tsv_dir + 'scoring3A_cases_params'+ '_nc'+ str(n_clusters) +'_rep' + str(rep) +'_s'+ str(n_ssm) + '_bep'+str(in_big_extra_prop)+'_sep'+str(in_small_extra_prop)+ '.tsv', 'w')
+    for i in range(rep):
+      # print("sc1",sc)
+        if set_prop != None:
+            size_clusters = set_prop_merged_split(prop =set_prop, scenario=scenario_set[0], n_ssm=n_ssm, n_clusters=n_clusters)
+         #   print("out_size_clusters",size_clusters)
+        else: 
+            size_clusters = rand_size_clusters(n_clusters,n_ssm)
+     #   print(p_clusters/np.sum(p_clusters))
+        
+        big_extra_prop = in_big_extra_prop
+        small_extra_prop = in_small_extra_prop
+       # big_extra_prop = np.random.normal(loc=in_big_extra_prop,scale=0.01)
+        #small_extra_prop = np.random.normal(loc=in_small_extra_prop,scale=0.005)
+        clust_out = [str(x) for x in size_clusters]
+        f.write('\t'.join(clust_out)+'\t')
+        print(i)
+        print(size_clusters)
+        
+        # calculate the CCM
+        prop_split = np.random.normal(loc=in_prop_split,scale=0.1)
+        #prop_split=np.random.beta(a=2,b=2)
+        f.write(str(big_extra_prop)+str(small_extra_prop)+'\t'+str(prop_split)+'\n')
+       # print("scenarios")
+        t_ccm, t_clusters = get_ccm_nvar('Truth',size_clusters=size_clusters)
+        t_ad = get_ad_nvar('Truth', size_clusters=size_clusters)
+      #  print "t_clusters\n", t_clusters
+        
+        for sc in scenario_set:
+       #     print(sc)
+            sc_orig = sc
+            if 'SmallExtra' in sc:
+                extra_prop = in_small_extra_prop
+            elif 'BigExtra' in sc:
+                extra_prop = in_big_extra_prop
+                sc = sc.replace("Big","Small")
+            
+            else:
+                extra_prop = None  
+            ccm, clusters = get_ccm_nvar(sc, t_ccm=t_ccm, t_clusters=t_clusters, size_clusters=size_clusters, extra_prop = extra_prop)
+        #    print "t_clusters1\n", clusters
+            if (rand == True and sc != "OneCluster" and sc != "NCluster" ):
+                ccm, clusters = closest_rand_reassign(clusters)
+            ad = get_ad_nvar(sc, size_clusters=size_clusters, extra_prop = extra_prop)         
+        #    print "ccm\n", ccm
+          #  print "t_clusters2\n", clusters
+          #  print "clusters\n", clusters
+           # 
+        #    print "ad\n", ad
+       #     print "t_ad\n", t_ad
+            #            # print("\n")
+           # ccm, clusters = closest_rand_reassign(clusters)
+      #      pdb.set_trace()
+            # test=calculate3Final(ccm, ad, t_ccm, t_ad, method="aupr")
+            # print "test aupr", test
+            # test=calculate3Final(ccm, ad, t_ccm, t_ad, method="js_divergence")
+            # print "test js ", test
+            score3A =  [calculate3Final(ccm, ad, t_ccm, t_ad, method=method)[3] for method in methods]
+            score3A = map(lambda x: 0 if np.isnan(x) else x , score3A)
+
+            t_2A = collapse_clusters_2A(t_clusters)
+            p_2A = collapse_clusters_2A(clusters)
+            muts = range(n_ssm)
+            tpout = []
+            vout, raw = om_validate2A(p_2A, t_2A, n_ssm, n_ssm, muts, subchallenge='3A')
+            tpout.append(vout)
+            tpout.append(raw)
+            score2A =  [om_calculate2A(*tpout, method=method, add_pseudo=True, pseudo_counts=None, rnd=1e-50) for method in methods]
+            score2A = map(lambda x: 0 if np.isnan(x) else x , score2A)
+
+            out3A = np.array((sc_orig,i,score3A),dtype=np.dtype([('sc','S40'),('rep','int'),('scores', str(len(methods))+'float32')]))
+            res3A.append(out3A)
+
+            out2A = np.array((sc_orig,i,score2A),dtype=np.dtype([('sc','S40'),('rep','int'),('scores', str(len(methods))+'float32')]))
+            res2A.append(out2A)
+    res3A = np.array(res3A)
+    res2A = np.array(res2A) 
+    # print(res3A)
+    # print(res2A)
+    f.close() 
+    return(res2A, res3A)
 
 
 
@@ -607,14 +712,14 @@ def scoring3A_behavior(method="orig", verbose=False, weights=None, save=True, pc
 
         if scenario == 'Truth':
             res.append(['Truth',
-                        calculate3(t_ccm,t_ad,t_ccm,t_ad,
-                                   method=method, verbose=verbose, weights=weights, pseudo_counts=n_pc, full_matrix=full_matrix, in_mat=in_mat)])
+                        calculate3Final(t_ccm,t_ad,t_ccm,t_ad)])
+                                   
         else:
             ccm = get_ccm(scenario, t_ccm=t_ccm)
             ad = get_ad(scenario, t_ad=t_ad)
             res.append([scenario,
-                        calculate3(ccm,ad,t_ccm,t_ad,
-                                   method=method, verbose=verbose, weights=weights, pseudo_counts=n_pc, full_matrix=full_matrix, in_mat=in_mat)])
+                        calculate3Final(ccm,ad,t_ccm,t_ad)])
+                                   
 
 
     if save:
@@ -667,13 +772,7 @@ def scoring_weight_behavior(sc="2A", methods=["js_divergence", "pearson", "mcc"]
 	    if res is None:
 	        res = np.transpose(np.asarray([[row[1] for row in scoring3A_behavior(method, verbose=verbose,write=False)] for method in methods]))
 	    print res
-	    scenarios = ["Truth", "OneCluster", "NClusterOneLineage", "NClusterTwoLineages", "NClusterCorrectLineage",
-                "ParentIsNieceWithChildren", "ParentIsSiblingWithChildren", "ParentIsCousin","ParentIsAunt", "ParentIsGrandparent", "ParentIsSibling",
-                "BigExtraTop", "BigExtraMid", "BigExtraCurBot", "BigExtraNewBot",
-                "SmallExtraTop", "SmallExtraMid", "SmallExtraNewBot", 'SmallExtraCurBot',
-                "SplitClusterMidMultiChild", "SplitClusterMidOneChild", "SplitClusterBotSame", "SplitClusterBotDiff",
-                "MergeClusterTop&Mid", "MergeClusterMid&BotMultiChild", "MergeClusterMid&BotOneChild","MergeClusterBot"]
-
+	   
     # True values for each attribute
     if sc == '2A':
         if res is None:
@@ -724,16 +823,11 @@ def scoring_weight_behavior_var(sc="2A", methods=["js_divergence", "pearson", "m
     # True values for each attribute
     if sc == '3A':
         if res is None:
-            res = np.transpose(np.asarray([[row[1] for row in scoring3A_behavior(method, verbose=verbose,write=False)] for method in methods]))
+            out = scoring3A_behavior_var(methods=methods, verbose=verbose,write=False,n_clusters=n_clusters,n_ssm=n_ssm,in_big_extra_prop=big_extra_prop, in_small_extra_prop=small_extra_prop)
+            scenarios = out['sc']
+            res = out['scores']
         print res
-        scenarios = ["Truth", "OneCluster", "NClusterOneLineage", "NClusterTwoLineages", "NClusterCorrectLineage",
-                "ParentIsNieceWithChildren", "ParentIsSiblingWithChildren", "ParentIsCousin","ParentIsAunt", "ParentIsGrandparent", "ParentIsSibling",
-                "BigExtraTop", "BigExtraMid", "BigExtraCurBot", "BigExtraNewBot",
-                "SmallExtraTop", "SmallExtraMid", "SmallExtraNewBot", 'SmallExtraCurBot',
-                "SplitClusterMidMultiChild", "SplitClusterMidOneChild", "SplitClusterBotSame", "SplitClusterBotDiff",
-                "MergeClusterTop&Mid", "MergeClusterMid&BotMultiChild", "MergeClusterMid&BotOneChild","MergeClusterBot"]
-
-    # True values for each attribute
+# True values for each attribute
     if sc == '2A':
         if res is None:
             out = scoring2A_behavior_var(methods=methods, verbose=verbose,write=False,n_clusters=n_clusters,n_ssm=n_ssm,in_big_extra_prop=big_extra_prop, in_small_extra_prop=small_extra_prop)
@@ -760,7 +854,7 @@ def scoring_weight_behavior_var(sc="2A", methods=["js_divergence", "pearson", "m
             wght_res[str(wght)] = scores
 
 
-    i
+    
     with open(tsv_dir + 'weights'+sc+'_all_cases_' + '_'.join([m  for m in methods]) + '_nc'+ str(n_clusters) +'_s'+ str(n_ssm) + '_bep'+str(big_extra_prop)+'_sep'+str(small_extra_prop)+ '.tsv', 'wb') as f:
         fields = sorted(wght_res.keys())
         print fields
@@ -771,69 +865,131 @@ def scoring_weight_behavior_var(sc="2A", methods=["js_divergence", "pearson", "m
 
     return wght_res, res
 
-def behaviour_2A_extra(n_ssms = 1000 ,methods = ["js_divergence", "pearson", "mcc"] ):
-    out_prop_scores = np.ones(1)
-    print(out_prop_scores.shape)
-    for n in [3,6]:
-        extra_prop = 0
-        while extra_prop <= 0.31:
-            out = scoring2A_behavior_var(methods=methods, scenarios = ["BigExtra"],verbose=True,write=False,n_clusters=n,n_ssm=n_ssms,in_big_extra_prop=extra_prop, in_small_extra_prop=0)
-            scores = out['scores']
-            params = np.full(shape=(scores.shape[0],2),fill_value=extra_prop)
+def format_to_print(res):
+    res_h = np.vstack((res['sc'], res['rep']))
+    res_h = np.transpose(res_h)
+    res_h = np.hstack((res_h, res['scores']))
+    return(res_h)
+
+
+def run_2A_3A(methods='js_divergence', verbose=False,n_ssm=600,n_clusters=6,in_big_extra_prop=0.1,in_small_extra_prop=0.025,write=True,rep=100,in_prop_split=0.5, set_prop = None, rand = False):
+    
+    out2A , out3A = scoring3A_behavior_var(methods=methods, rep=rep, n_ssm=n_ssm, in_small_extra_prop=in_small_extra_prop, in_big_extra_prop=in_big_extra_prop, write = write, in_prop_split=in_prop_split, set_prop=set_prop, rand=rand)
+    out2A, out3A = map(format_to_print, [out2A,out3A])
+
+    name2A = tsv_dir + 'scoring2A_cases_'+ '_nc'+ str(n_clusters) +'_rep'+str(rep)+'_s'+ str(n_ssm) + '_bep'+str(round(in_big_extra_prop,2))+'_sep'+str(round(in_small_extra_prop,2))
+    name3A = tsv_dir + 'scoring3A_cases_'+ '_nc'+ str(n_clusters) +'_s'+ str(n_ssm) + '_bep'+str(round(in_big_extra_prop,2))+'_sep'+str(round(in_small_extra_prop,2))
+    if rand == True:
+        name2A = name2A + '_rand'
+        name3A = name3A + '_rand'
+    name2A = name2A + '.txt'
+    name3A = name3A + '.txt'
+
+    np.savetxt(name2A,out2A,delimiter="\t", fmt = '%s' )
+    np.savetxt(name3A,out3A,delimiter="\t", fmt = '%s')
+
+
+def behaviour_2A_extra(n_ssm = 1000 ,methods = ["js_divergence", "pearson", "mcc"] ):
+    out_prop_scores = np.ones((1,1))
+  #  print(out_prop_scores.shape)
+    for n in [6]:
+        extra_prop = 0.05
+        while extra_prop <= 0.51:
+            
+            out2A, out3A = scoring3A_behavior_var(methods=methods, rep=20, in_scenarios = ["BigExtraCurBot"],verbose=True,write=False,n_clusters=n, n_ssm=n_ssm, in_big_extra_prop=extra_prop, in_small_extra_prop=0)
+            scores2A = out2A['scores']
+            scores3A = out3A['scores']
+            params = np.full(shape=(scores2A.shape[0],2),fill_value=extra_prop)
             params[:,1] = n
-            scores = np.hstack((scores,params))
-            if(out_prop_scores.shape[0] == 1):
+            scores = np.hstack((params, scores2A))
+            scores = np.hstack((scores, scores3A))
+            if(out_prop_scores.shape[1] == 1):
                 out_prop_scores = scores
-            out_prop_scores = np.vstack((out_prop_scores,scores))
+            else:
+                out_prop_scores = np.vstack((out_prop_scores,scores))
            # print("scores", scores)
             extra_prop += 0.05
-    print(out_prop_scores)
-    np.savetxt("out_prop.txt",out_prop_scores,delimiter="\t")
+    np.savetxt("out_prop_extra2A3A.txt",out_prop_scores,delimiter="\t")
 
-def behaviour_2A_merged(n_ssms=1000,  methods = ["js_divergence", "pearson", "mcc"], scenario=['MergeClusterBot'] ):
-    out_prop_scores = np.ones(1)
+def behaviour_2A_merged(n_ssm=1000,  methods = ["js_divergence", "pearson", "mcc"], scenario=['MergeClusterMid&BotOneChild'] ):
+    out_prop_scores = np.ones((1,1))
     print(out_prop_scores.shape)
-    for n in [3,6]:
-        prop_merged = 0
-        while prop_merged < 0.51:
-            out = scoring2A_behavior_var(methods=methods, scenarios = ["MergeClusterBot"],verbose=True,write=False,n_clusters=n,n_ssm=n_ssms, set_prop=prop_merged)
-            print(out)
-            scores = out['scores']
-            params = np.full(shape=(scores.shape[0],2),fill_value=prop_merged)
+    for n in [6]:
+        prop_merged = 0.01
+        while prop_merged < 0.61:
+            out2A, out3A = scoring3A_behavior_var(methods=methods, in_scenarios = ["MergeClusterMid&BotOneChild"],rep=20, verbose=True,write=False,n_clusters=n,n_ssm=n_ssm, set_prop=prop_merged)
+            print(out2A)
+
+            scores2A = out2A['scores']
+            scores3A = out3A['scores']
+            params = np.full(shape=(scores2A.shape[0],2),fill_value=prop_merged)
             params[:,1] = n
-            scores = np.hstack((scores,params))
+            scores = np.hstack((params, scores2A))
+            scores = np.hstack((scores, scores3A))
             if(out_prop_scores.shape[0] == 1):
                 out_prop_scores = scores
-            out_prop_scores = np.vstack((out_prop_scores,scores))
+            else:
+                out_prop_scores = np.vstack((out_prop_scores,scores))
            # print("scores", scores)
             prop_merged += 0.1
-    print(out_prop_scores)
-    np.savetxt("out_prop_merged.txt",out_prop_scores,delimiter="\t")
+  #  print(out_prop_scores)
+    np.savetxt("out_prop_merged2A3A.txt",out_prop_scores,delimiter="\t")
 
-def behaviour_2A_split(n_ssms=1000,  methods = ["js_divergence", "pearson", "mcc"], scenario=['SplitClusterBot'] ):
-    out_prop_scores = np.ones(1)
+def behaviour_2A_split(n_ssm=1000,  methods = ["js_divergence", "pearson", "mcc"], scenario=['SplitClusterBot'] ):
+    out_prop_scores = np.ones((1,1))
     print(out_prop_scores.shape)
-    for n in [3,6]:
-        prop_split = 0.1
-        while prop_split < 0.51:
-            in_prop_split=0.1
-            while in_prop_split < 0.51:
-                print("prop_split", prop_split)
-                out = scoring2A_behavior_var(methods=methods, scenarios = ["SplitClusterBot"],verbose=True,write=False,n_clusters=n,n_ssm=n_ssms, in_prop_split=in_prop_split, set_prop=prop_split)
-             #   print(out)
-                scores = out['scores']
-                params = np.full(shape=(scores.shape[0],3),fill_value=prop_split)
-                params[:,1] = n
-                params[:,2] = in_prop_split
-                scores = np.hstack((scores,params))
-                if(out_prop_scores.shape[0] == 1):
-                    out_prop_scores = scores
+    for n in [6]:
+        #prop_split = 0.18
+       # while prop_split < 0.51:
+        in_prop_split=0.1
+        while in_prop_split < 0.61:
+   #         print("prop_split", prop_split)
+            out2A, out3A = scoring3A_behavior_var(methods=methods, in_scenarios = ["SplitClusterBotDiff"], rep=20, verbose=True,write=False,n_clusters=n,n_ssm=n_ssm, in_prop_split=in_prop_split)
+           # print(out)
+            scores2A = out2A['scores']
+            scores3A = out3A['scores']
+            params = np.full(shape=(scores2A.shape[0],2),fill_value=in_prop_split)
+            params[:,1] = n
+           # params[:,2] = in_prop_split
+            scores = np.hstack((params, scores2A))
+            scores = np.hstack((scores, scores3A))
+            if(out_prop_scores.shape[1] == 1):
+                out_prop_scores = scores
+            else:    
                 out_prop_scores = np.vstack((out_prop_scores,scores))
-               # print("scores", scores)
-                in_prop_split += 0.1
-            prop_split += 0.1
+           # print("scores", scores)
+            in_prop_split += 0.1
+           # prop_split += 0.2
+   # print(out_prop_scores)
+    np.savetxt("out_prop_split2A3A.txt",out_prop_scores,delimiter="\t")
+
+def behaviour_2A_nssm(n_ssm=300, nssm_max=600, step=300, methods = ["js_divergence", "pearson", "mcc"], scenario=['SplitClusterBot'] ):
+    out_prop_scores = np.ones((1,1))
+    print(out_prop_scores.shape)
+    for n in [6]:
+        prop_split = 0.15
+       # while prop_split < 0.51:
+        while n_ssm < nssm_max:
+            print("prop_split", prop_split)
+            out2A, out3A = scoring3A_behavior_var(methods=methods, in_scenarios = scenario, rep=20, verbose=True,write=False,n_clusters=n,n_ssm=n_ssm, in_small_extra_prop=0.10)
+            print(out3A)
+            scores2A = out2A['scores']
+            scores3A = out3A['scores']
+            params = np.full(shape=(scores2A.shape[0],2),fill_value=n_ssm)
+            params[:,1] = n
+           # params[:,2] = in_prop_split
+            scores = np.hstack((params, scores2A))
+            scores = np.hstack((scores, scores3A))
+            if(out_prop_scores.shape[1] == 1):
+                out_prop_scores = scores
+            else:    
+                out_prop_scores = np.vstack((out_prop_scores,scores))
+           # print("scores", scores)
+            n_ssm += step
+           # prop_split += 0.2
     print(out_prop_scores)
-    np.savetxt("out_prop_split.txt",out_prop_scores,delimiter="\t")
+    np.savetxt("out_nssm_small_extra_mid_2A3A.txt",out_prop_scores,delimiter="\t")
+
 
 def get_weights(n_objects, weights, cur_weight=None, list_weights= list()):
     """Generate a list of all possible unique combinations of weight assignments from the given list
@@ -1337,6 +1493,8 @@ if __name__ == '__main__':
 #        scoring1B_behavior(m)
 
 
+
+
     for m in methods['1C']:
         print 'Scoring 1C Behavior with method ' + m + '...'
 #        scoring1C_behavior(m)
@@ -1349,16 +1507,31 @@ if __name__ == '__main__':
 
 #    scoring2A_behavior(method='pearson', verbose=True, tst_closest_reassign=False, tst_big_mat=True, tst_rand_reassign=False)
     print 'Scoring 3A Behavior...'
-  #  scoring3A_behavior_all(verbose=True)
-  #  scoring3A_behavior(method="mcc", verbose=True,pc_amount="none", full_matrix=False, in_mat=1)
+ #   scoring3A_behavior_all(verbose=True)
+ #   scoring3A_behavior(method="mcc", verbose=True,pc_amount="none", full_matrix=False, in_mat=1)
 
     print 'Scoring 3A Behavior using multiple metrics with different weights...'
-    behaviour_2A_split(n_ssms=1000)
-    behaviour_2A_merged(n_ssms=1000)
-    behaviour_2A_extra(methods=['js_divergence','mcc','pearson'],n_ssms=1000)
+    #run_2A_3A(methods=["js_divergence", "mcc", "aupr"], rep=1, n_ssm=1200, in_small_extra_prop=0.02, in_big_extra_prop=0.15, rand=True)
+    np.random.seed(14)
+    run_2A_3A(methods=["js_divergence", "mcc", "aupr"], rep=3, n_ssm=120, in_small_extra_prop=0.05, in_big_extra_prop=0.15, rand=False)
+  #  scoring3A_behavior_var(methods=["js_divergence", "mcc", "aupr"], in_scenarios = ['BigExtraTop'],rep=2, n_ssm=1249, in_small_extra_prop=1.0/12.0, in_big_extra_prop=4.0/12.0)
+  #  behaviour_2A_split(n_ssms=1000)
+  #  behaviour_2A_merged(n_ssms=1000)
+    # if sys.argv[1] == 'extra':
+    #     print('extra')
+    #     behaviour_2A_extra(methods=['js_divergence','mcc','aupr'],n_ssm= int(sys.argv[2]))
+    # elif sys.argv[1] == 'merged':
+    #     print('merged')
+    #     behaviour_2A_merged(methods=['js_divergence','mcc','aupr'],n_ssm=1200)
+    # elif sys.argv[1] == 'split':
+    #     print('split')
+    #     behaviour_2A_split(methods=['js_divergence','mcc','aupr'],n_ssm=1200)
+    # elif sys.argv[1] == 'nssm':
+    #     print('nssm')
+    #     behaviour_2A_nssm(methods=['js_divergence','mcc','aupr'],n_ssm=600, nssm_max= 12001, step=600, scenario=['MergeClusterMid&BotMultiChild'])
   #  out=scoring2A_behavior_var(methods=['js_divergence','mcc','pearson'], verbose=True,n_ssm=600,n_clusters=6,big_extra_num=15,write=False,rep=10)
-  #scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'])
-    # scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'],n_clusters=6,n_ssm=1000)
+ # scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'])
+  #  scoring_weight_behavior_var(sc="3A",verbose=True,methods=['js_divergence','mcc','pearson'],n_clusters=6,n_ssm=18,big_extra_prop=1.0/12.0 )
     # scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'],n_clusters=6,n_ssm=1000,big_extra_prop=0.15)
     # scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'],n_clusters=6,n_ssm=1000,small_extra_prop=0.01)
     # scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'],n_clusters=6,n_ssm=1000,small_extra_prop=0.05)
@@ -1369,3 +1542,12 @@ if __name__ == '__main__':
     # scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'],n_clusters=3,n_ssm=1000,small_extra_prop=0.01)
 #print(inspect.get_members(get_ccm_nvar))
 #get_ccm_nvar('SplitClusterBot',size_clusters=[3,4,4], n_clusters=3, prop_split=float(0.5))
+   
+
+    # test = np.zeros((6,3))
+    # test[0:2,0] = 1
+    # test[2:4,1] = 1
+    # test[4:7,2] = 1
+    # print test
+    # test_out = collapse_clusters_2A(test)
+    # print(test_out)

@@ -1,6 +1,7 @@
 from SMCScoring import *
 import numpy as np
 import csv
+import pdb
 np.set_printoptions(threshold='nan')
 
 def closest_rand_reassign(in_clusters,p_err=0.1):
@@ -31,7 +32,7 @@ def closest_rand_reassign(in_clusters,p_err=0.1):
 
 
 
-def get_ccm_nvar(scenario, t_ccm=None, t_clusters=None, size_clusters=[100,100,100,100,100,100], prop_split=0.5, n_clusters=6, big_extra_prop=0.15, small_extra_prop=0.05, nssms=None):
+def get_ccm_nvar(scenario, t_ccm=None, t_clusters=None, size_clusters=[100,100,100,100,100,100], prop_split=0.5, n_clusters=6, extra_prop=1.0/12.0, nssms=None):
   #  print("in get_ccm", scenario)
     size_clusters = np.asarray(size_clusters)
  #   print(size_clusters)
@@ -49,18 +50,18 @@ def get_ccm_nvar(scenario, t_ccm=None, t_clusters=None, size_clusters=[100,100,1
     if scenario in "Truth":
         return t_ccm, t_clusters
     elif "ParentIs" in scenario:
-        return t_ccm
+        return (t_ccm, t_clusters)
     elif scenario is "OneCluster":
         if nssms is None:
         #    print(t_ccm.shape)
             out = np.ones(t_ccm.shape)
       #      print("made out")
-            return out
+            return (out, np.ones((t_ccm.shape[0],1)))
       #  return np.ones((nssms,nssms), dtype=np.int8)
     elif "NCluster" in scenario:
         if nssms is None:
-            return np.identity(t_ccm.shape[0])
-        return np.identity(nssms, dtype=np.int8)
+            return (np.identity(t_ccm.shape[0]), np.identity(t_ccm.shape[0]))
+        return (np.identity(nssms, dtype=np.int8),np.identity(nssms, dtype=np.int8))
     elif "SplitCluster" in scenario:
         clusters = np.zeros((np.sum(size_clusters),n_clusters+1))
         clusters[:,:-1] = np.copy(t_clusters)
@@ -115,25 +116,33 @@ def get_ccm_nvar(scenario, t_ccm=None, t_clusters=None, size_clusters=[100,100,1
         clusters = np.zeros((np.sum(size_clusters[0:n_clusters]),n_clusters+1))
         clusters[:,:-1] = np.copy(t_clusters)
     #    print(2.0/float(n_clusters))
-        rand_clusters = np.random.binomial(n=1, p=2.0/float(n_clusters), size=n_clusters)
+       # rand_clusters = np.random.binomial(n=1, p=2.0/float(n_clusters), size=n_clusters)
        # print(rand_clusters)
         if "SmallExtra" in scenario:
-            num_extra = int(small_extra_prop*np.sum(size_clusters[0:n_clusters]))
-            print("num extra small", num_extra)
+            num_extra = int(extra_prop*np.sum(size_clusters[0:n_clusters]))
+
         elif "BigExtra" in scenario:
-            num_extra = int(big_extra_prop*np.sum(size_clusters[0:n_clusters]))
+            num_extra = int(extra_prop*np.sum(size_clusters[0:n_clusters]))
         #    print("num extra big", num_extra, big_extra_prop*np.sum(size_clusters[0:n_clusters]))
      #   print("clusters_before",clusters)
-        num_extra_clust = int(num_extra/np.sum(rand_clusters))
+        num_extra_clust = map(round,extra_prop*size_clusters)
+        # print "num_extra ", num_extra_clust
      #   print("num extra clust",num_extra_clust)
         for i in range(n_clusters):
       #      print(rand_clusters[i],i)
-            if (rand_clusters[i]==1):
-                if (i ==0):
-                    clusters[np.sum(size_clusters[0]):np.sum(size_clusters[0])+num_extra_clust,i] = 0
-                    clusters[np.sum(size_clusters[0]):np.sum(size_clusters[0])+num_extra_clust,n_clusters] = 1    
-                clusters[np.sum(size_clusters[0:i]):np.sum(size_clusters[0:i])+num_extra_clust,i] = 0
-                clusters[np.sum(size_clusters[0:i]):np.sum(size_clusters[0:i])+num_extra_clust,n_clusters] = 1
+     #       if (rand_clusters[i]==1):
+
+            if (i ==0):
+                clusters[0:int(round(extra_prop*size_clusters[0])),i] = 0
+                clusters[0:int(round(extra_prop*size_clusters[0])),n_clusters] = 1
+            else:
+                clusters[np.sum(size_clusters[0:i]):np.sum(size_clusters[0:i])+int(round(extra_prop*size_clusters[i])),i] = 0
+                clusters[np.sum(size_clusters[0:i]):np.sum(size_clusters[0:i])+int(round(extra_prop*size_clusters[i])),n_clusters] = 1
+
+            #     clusters[np.sum(size_clusters[0]):np.sum(size_clusters[0])+num_extra_clust,i] = 0
+            #     clusters[np.sum(size_clusters[0]):np.sum(size_clusters[0])+num_extra_clust,n_clusters] = 1    
+            # clusters[np.sum(size_clusters[0:i]):np.sum(size_clusters[0:i])+num_extra_clust,i] = 0
+            # clusters[np.sum(size_clusters[0:i]):np.sum(size_clusters[0:i])+num_extra_clust,n_clusters] = 1
     #    print("clusters_after",clusters)
         return (np.dot(clusters,clusters.T),clusters)
     else:
