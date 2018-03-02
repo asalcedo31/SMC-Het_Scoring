@@ -667,7 +667,7 @@ def scoring3A_behavior_var(methods='js_divergence', in_scenarios = None, verbose
 
 
 
-def scoring3A_behavior(method="orig", verbose=False, weights=None, save=True, pc_amount='more', full_matrix=True, in_mat=2):
+def scoring3A_behavior(method="orig", verbose=False, weights=None, save=True, pc_amount='more', full_matrix=True, in_mat=2, size_clusters=100):
     '''Scoring behaviour of subchallenge 3 metrics
 
     Attributes:
@@ -685,8 +685,8 @@ def scoring3A_behavior(method="orig", verbose=False, weights=None, save=True, pc
             5 - use all except cousin matrix (CM)
     '''
     # True values for each attribute
-    t_ccm, t_clusters = get_ccm("Truth")
-    t_ad = get_ad("Truth")
+    t_ccm, t_clusters = get_ccm("Truth",size_clusters=size_clusters)
+    t_ad = get_ad("Truth", size_clusters=size_clusters)
 
     res = list() # results of using the given method to score each scenario
 
@@ -715,8 +715,8 @@ def scoring3A_behavior(method="orig", verbose=False, weights=None, save=True, pc
                         calculate3Final(t_ccm,t_ad,t_ccm,t_ad)])
                                    
         else:
-            ccm = get_ccm(scenario, t_ccm=t_ccm)
-            ad = get_ad(scenario, t_ad=t_ad)
+            ccm = get_ccm(scenario, t_ccm=t_ccm, size_clusters=size_clusters)
+            ad = get_ad(scenario, t_ad=t_ad, size_clusters=size_clusters)
             res.append([scenario,
                         calculate3Final(ccm,ad,t_ccm,t_ad)])
                                    
@@ -738,13 +738,13 @@ def scoring3A_behavior(method="orig", verbose=False, weights=None, save=True, pc
 
     return res
 
-def scoring3A_behavior_all(verbose=True):
+def scoring3A_behavior_all(verbose=True,size_clusters=100):
     for method in [#'pseudoV',
     #                'orig',
-    #                'mcc',
+                    'mcc',
     #                'pearson',
     #                'spearman',
-    #                'aupr',
+                    'aupr',
     #                'sqrt',
                     'js_divergence']:
     #                'sym_pseudoV',
@@ -752,13 +752,13 @@ def scoring3A_behavior_all(verbose=True):
     #               ['pseudoV', 'pearson', 'sym_pseudoV'],
     #               ['aupr', 'sqrt', 'sym_pseudoV'],
     #               ['aupr', 'sqrt', 'sym_pseudoV', 'pearson']]:
-        for fm in [True, False]:
-            for pc in ['none', 'less', 'more']:
-                for input in range(5):
-                    print 'Starting %s - Pseudo Counts: %s - Full Matrix: %s, Input Matrices Index: %s' % (method,pc,fm, input)
-                    print method, verbose, pc, fm, input+1
-                    scoring3A_behavior(method=method, verbose=verbose,pc_amount=pc, full_matrix=fm, in_mat=input+1)
-                    print 'Done %s - Pseudo Counts: %s - Full Matrix: %s, Input Matrices Index: %s' % (method,pc,fm, input)
+        # for fm in [True, False]:
+        #     for pc in ['none', 'less', 'more']:
+        #         for input in range(5):
+        #             print 'Starting %s - Pseudo Counts: %s - Full Matrix: %s, Input Matrices Index: %s' % (method,pc,fm, input)
+        #             print method, verbose, pc, fm, input+1
+            scoring3A_behavior(method=method, verbose=verbose,pc_amount='none', full_matrix=True, in_mat=1,size_clusters=size_clusters)
+                   # print 'Done %s - Pseudo Counts: %s - Full Matrix: %s, Input Matrices Index: %s' % (method,pc,fm, input)
 
 def scoring_weight_behavior(sc="2A", methods=["js_divergence", "pearson", "mcc"], verbose=False, res=None, in_mat=2):
     '''Create the data on how the weights used in subchallenge 3 affect the score using the given scoring methods
@@ -1135,8 +1135,8 @@ def get_ccm(scenario, t_ccm=None, t_clusters=None, size_clusters=100, n_clusters
         clusters = np.zeros((n_clusters*size_clusters,n_clusters+1))
         clusters[:,:-1] = np.copy(t_clusters)
         if "SplitClusterBot" in scenario:
-            print((n_clusters-0.5) * size_clusters)
-            print(n_clusters*size_clusters,n_clusters-1)
+    #        print((n_clusters-0.5) * size_clusters)
+     #       print(n_clusters*size_clusters,n_clusters-1)
             clusters[int((n_clusters-0.5) * size_clusters):int(n_clusters*size_clusters),n_clusters-1] = 0
             clusters[int((n_clusters-0.5)*size_clusters):int(n_clusters*size_clusters),n_clusters] = 1
             return np.dot(clusters, clusters.T)
@@ -1152,11 +1152,12 @@ def get_ccm(scenario, t_ccm=None, t_clusters=None, size_clusters=100, n_clusters
 
     elif scenario is "MergeClusterBot":
         clusters = np.copy(t_clusters[:,:-1])
-        print((n_clusters-1)*size_clusters)
-        print(n_clusters*size_clusters,n_clusters-2)
+  #      print((n_clusters-1)*size_clusters)
+  #      print(n_clusters*size_clusters,n_clusters-2)
         clusters[(n_clusters-1)*size_clusters:n_clusters*size_clusters,n_clusters-2] = 1 #fix cluster 5 (originally cluster 6)
         clusters[(n_clusters-2)*size_clusters:(n_clusters-1)*size_clusters,n_clusters-2] = 0 #merge clusters 4 and 5 (from true phylogeny)
-        clusters[(n_clusters-3)*size_clusters:(n_clusters-2)*size_clusters,n_clusters-3] = 1
+        clusters[(n_clusters-2)*size_clusters:(n_clusters-1)*size_clusters,n_clusters-3] = 1
+        print(clusters)
         return np.dot(clusters, clusters.T)
     elif scenario == "MergeClusterMid&BotOneChild":
         clusters = np.copy(t_clusters[:,:-1])
@@ -1187,7 +1188,7 @@ def get_ccm(scenario, t_ccm=None, t_clusters=None, size_clusters=100, n_clusters
         for i in range(n_clusters):
             clusters[size_clusters*i:size_clusters*i+num_extra,i] = 0
             clusters[size_clusters*i:size_clusters*i+num_extra,n_clusters] = 1
-            print(clusters)
+        #    print(clusters)
         return np.dot(clusters,clusters.T)
     else:
         raise LookupError("Invalid scenario")
@@ -1507,28 +1508,28 @@ if __name__ == '__main__':
 
 #    scoring2A_behavior(method='pearson', verbose=True, tst_closest_reassign=False, tst_big_mat=True, tst_rand_reassign=False)
     print 'Scoring 3A Behavior...'
- #   scoring3A_behavior_all(verbose=True)
+    scoring3A_behavior_all(verbose=True,size_clusters=10)
  #   scoring3A_behavior(method="mcc", verbose=True,pc_amount="none", full_matrix=False, in_mat=1)
 
-    print 'Scoring 3A Behavior using multiple metrics with different weights...'
+  #  print 'Scoring 3A Behavior using multiple metrics with different weights...'
     #run_2A_3A(methods=["js_divergence", "mcc", "aupr"], rep=1, n_ssm=1200, in_small_extra_prop=0.02, in_big_extra_prop=0.15, rand=True)
-    np.random.seed(14)
-    run_2A_3A(methods=["js_divergence", "mcc", "aupr"], rep=3, n_ssm=120, in_small_extra_prop=0.05, in_big_extra_prop=0.15, rand=False)
-  #  scoring3A_behavior_var(methods=["js_divergence", "mcc", "aupr"], in_scenarios = ['BigExtraTop'],rep=2, n_ssm=1249, in_small_extra_prop=1.0/12.0, in_big_extra_prop=4.0/12.0)
-  #  behaviour_2A_split(n_ssms=1000)
-  #  behaviour_2A_merged(n_ssms=1000)
-    # if sys.argv[1] == 'extra':
-    #     print('extra')
-    #     behaviour_2A_extra(methods=['js_divergence','mcc','aupr'],n_ssm= int(sys.argv[2]))
-    # elif sys.argv[1] == 'merged':
-    #     print('merged')
-    #     behaviour_2A_merged(methods=['js_divergence','mcc','aupr'],n_ssm=1200)
-    # elif sys.argv[1] == 'split':
-    #     print('split')
-    #     behaviour_2A_split(methods=['js_divergence','mcc','aupr'],n_ssm=1200)
-    # elif sys.argv[1] == 'nssm':
-    #     print('nssm')
-    #     behaviour_2A_nssm(methods=['js_divergence','mcc','aupr'],n_ssm=600, nssm_max= 12001, step=600, scenario=['MergeClusterMid&BotMultiChild'])
+  #   np.random.seed(14)
+  # #  run_2A_3A(methods=["js_divergence", "mcc", "aupr"], rep=3, n_ssm=120, in_small_extra_prop=0.05, in_big_extra_prop=0.15, rand=False)
+  # #  scoring3A_behavior_var(methods=["js_divergence", "mcc", "aupr"], in_scenarios = ['BigExtraTop'],rep=2, n_ssm=1249, in_small_extra_prop=1.0/12.0, in_big_extra_prop=4.0/12.0)
+  # #  behaviour_2A_split(n_ssms=1000)
+  # #  behaviour_2A_merged(n_ssms=1000)
+  #   if sys.argv[1] == 'extra':
+  #       print('extra')
+  #       behaviour_2A_extra(methods=['js_divergence','mcc','aupr'],n_ssm= int(sys.argv[2]))
+  #   elif sys.argv[1] == 'merged':
+  #       print('merged')
+  #       behaviour_2A_merged(methods=['js_divergence','mcc','aupr'],n_ssm=1200)
+  #   elif sys.argv[1] == 'split':
+  #       print('split')
+  #       behaviour_2A_split(methods=['js_divergence','mcc','aupr'],n_ssm=1200)
+  #   elif sys.argv[1] == 'nssm':
+  #       print('nssm')
+  #       behaviour_2A_nssm(methods=['js_divergence','mcc','aupr'],n_ssm=600, nssm_max= 12001, step=600, scenario=['SmallExtraMid'])
   #  out=scoring2A_behavior_var(methods=['js_divergence','mcc','pearson'], verbose=True,n_ssm=600,n_clusters=6,big_extra_num=15,write=False,rep=10)
  # scoring_weight_behavior_var(sc="2A",verbose=True,methods=['js_divergence','mcc','pearson'])
   #  scoring_weight_behavior_var(sc="3A",verbose=True,methods=['js_divergence','mcc','pearson'],n_clusters=6,n_ssm=18,big_extra_prop=1.0/12.0 )
