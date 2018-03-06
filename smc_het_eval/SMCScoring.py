@@ -473,6 +473,7 @@ def calculate2_simpleKL(pred, truth, rnd=1e-50):
     return abs(res)
 
 def calculate2_js_divergence(pred, truth, rnd=1e-50, full_matrix=True, sym=True):
+    print "Calculating JS divergence"
     if full_matrix:
         pred_cp = pred
         truth_cp = truth
@@ -690,7 +691,7 @@ def mystd(vec1, vec2, m1, m2):
     return s1, s2
 
 def calculate2_aupr(pred, truth, full_matrix=True):
-
+    print "Calculating AUPR"
     n = truth.shape[0]
     if full_matrix:
         pred_cp = pred.flatten()
@@ -715,6 +716,7 @@ def calculate2_aupr(pred, truth, full_matrix=True):
 # note about casting: should be int/float friendly for pred/truth matrices
 
 def calculate2_mcc(pred, truth, full_matrix=True, rnd=1e-50):
+    print "Calculating MCC"
     n = truth.shape[0]
     ptype = str(pred.dtype)
     ttype = str(truth.dtype)
@@ -1522,7 +1524,7 @@ def verifyChallenge(challenge, predfiles, vcf):
     return "Valid"
 
  
-def scoreChallenge(challenge, predfiles, truthfiles, vcf, sample_fraction=1.0, rnd=1e-50):
+def scoreChallenge(challenge, predfiles, truthfiles, vcf, method='js_divergence', sample_fraction=1.0, rnd=1e-50):
     
     
     
@@ -1668,8 +1670,8 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, sample_fraction=1.0, r
     if challenge in ['3A']:
         pout[0] = np.dot(pout[0], pout[0].T)
         tout[0] = np.dot(tout[0], tout[0].T)
-
-        return challengeMapping[challenge]['score_func'](*(pout + tout), method="js_divergence")
+        print "Method ", method
+        return challengeMapping[challenge]['score_func'](*(pout + tout), method=method)
 
     return challengeMapping[challenge]['score_func'](*(pout + tout))
 
@@ -1719,6 +1721,7 @@ if __name__ == '__main__':
     parser.add_argument("--pred-config", default=None)
     parser.add_argument("--truth-config", default=None)
     parser.add_argument("-c", "--challenge", default=None)
+    parser.add_argument("-m", "--method", default='js_divergence')
     parser.add_argument("--predfiles", nargs="+")
     parser.add_argument("--truthfiles", nargs="*")
     parser.add_argument("--vcf")
@@ -1759,7 +1762,7 @@ if __name__ == '__main__':
                 if args.v:
                     res = verifyChallenge(challenge, predfile, vcf)
                 else:
-                    res = scoreChallenge(challenge, predfile, truthfiles, vcf, rnd=args.rnd[0])
+                    res = scoreChallenge(challenge, predfile, truthfiles, vcf, rnd=args.rnd[0],method=args.method)
                 out[challenge] = res
         with open(args.outputfile, "w") as handle:
             jtxt = json.dumps(out)
@@ -1810,7 +1813,7 @@ if __name__ == '__main__':
         # REAL SCORE
         else:
             print('Running Challenge %s' % args.challenge)
-            res = scoreChallenge(args.challenge, args.predfiles, args.truthfiles, args.vcf, rnd=args.rnd[0])
+            res = scoreChallenge(args.challenge, args.predfiles, args.truthfiles, args.vcf, rnd=args.rnd[0],method=args.method)
             print res
             #print('SCORE -> %.16f' % res)
 

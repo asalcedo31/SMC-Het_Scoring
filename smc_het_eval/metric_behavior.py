@@ -712,13 +712,13 @@ def scoring3A_behavior(method="orig", verbose=False, weights=None, save=True, pc
 
         if scenario == 'Truth':
             res.append(['Truth',
-                        calculate3Final(t_ccm,t_ad,t_ccm,t_ad)])
+                        calculate3Final(t_ccm,t_ad,t_ccm,t_ad,method=method)])
                                    
         else:
             ccm = get_ccm(scenario, t_ccm=t_ccm, size_clusters=size_clusters)
             ad = get_ad(scenario, t_ad=t_ad, size_clusters=size_clusters)
             res.append([scenario,
-                        calculate3Final(ccm,ad,t_ccm,t_ad)])
+                        calculate3Final(ccm,ad,t_ccm,t_ad,method=method)])
                                    
 
 
@@ -1157,7 +1157,7 @@ def get_ccm(scenario, t_ccm=None, t_clusters=None, size_clusters=100, n_clusters
         clusters[(n_clusters-1)*size_clusters:n_clusters*size_clusters,n_clusters-2] = 1 #fix cluster 5 (originally cluster 6)
         clusters[(n_clusters-2)*size_clusters:(n_clusters-1)*size_clusters,n_clusters-2] = 0 #merge clusters 4 and 5 (from true phylogeny)
         clusters[(n_clusters-2)*size_clusters:(n_clusters-1)*size_clusters,n_clusters-3] = 1
-        print(clusters)
+       # print(clusters)
         return np.dot(clusters, clusters.T)
     elif scenario == "MergeClusterMid&BotOneChild":
         clusters = np.copy(t_clusters[:,:-1])
@@ -1268,10 +1268,10 @@ def get_ad(scenario, t_ad=None, size_clusters=100, nssms=None):
         return np.zeros((nssms,nssms), dtype=np.int8)
     elif scenario is "NClusterOneLineage":
         # np.triu() returns a copy, this does the triu() in memory instead
-        if nssms is None:
-            return np.triu(np.ones(t_ad.shape))
-        ad = np.ones((nssms, nssms), dtype=np.int8)
-        for i in xrange(nssms):
+        #if nssms is None:
+        #    return np.triu(np.ones(t_ad.shape))
+        ad = np.ones(t_ad.shape, dtype=np.int8)
+        for i in xrange(t_ad.shape[0]):
             for j in xrange(i + 1):
                 ad[i, j] = 0
         return ad
@@ -1508,7 +1508,7 @@ if __name__ == '__main__':
 
 #    scoring2A_behavior(method='pearson', verbose=True, tst_closest_reassign=False, tst_big_mat=True, tst_rand_reassign=False)
     print 'Scoring 3A Behavior...'
-    scoring3A_behavior_all(verbose=True,size_clusters=10)
+    scoring3A_behavior_all(verbose=True,size_clusters=3)
  #   scoring3A_behavior(method="mcc", verbose=True,pc_amount="none", full_matrix=False, in_mat=1)
 
   #  print 'Scoring 3A Behavior using multiple metrics with different weights...'
