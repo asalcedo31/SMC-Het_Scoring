@@ -24,6 +24,13 @@ def test_metrics():
     aupr1 = {"Full" : 0.93, "Half" : 0.85}
     pseudoV1 = {"Full" : 151.6, "Half" : None}
     js_divergence1 = {"Full" : 1.17, "Half" : None}
+    
+    predfile2 = readFile('no_fp/predfile_2A_no_fp.txt')
+    truthfile2 = readFile('no_fp/truthfile_2A_no_fp.txt')
+    #predfile2 = predfile2.split("\n")
+    #truthfile2 = truthfile2.split("\n")
+    pred=validate2A(predfile2,nssms=5)
+    truth=validate2A(truthfile2,nssms=5)
 
     for p, q in zip(a, b):
         assert round(om_calculate2_orig(*ans1, full_matrix=p), 2) == orig1[q]
@@ -31,10 +38,16 @@ def test_metrics():
         assert round(om_calculate2_mcc(*ans1, full_matrix=p), 2) == mcc1[q]
         assert round(om_calculate2_spearman(*ans1, full_matrix=p), 2) == spearman1[q]
         assert round(om_calculate2_aupr(*ans1, full_matrix=p), 2) == aupr1[q]
-    
+
+    assert round(calculate2_js_divergence(pred, truth, full_matrix=True), 2) == js_divergence1['Full']
+    assert round(calculate2_mcc(pred, truth, full_matrix=True), 2) == mcc1['Full']
+    assert round(calculate2_mcc(pred, truth, full_matrix=True), 2) == round(calculate2_pearson(pred, truth, full_matrix=True), 2)
+    assert round(calculate2_spearman(pred, truth, full_matrix=True), 2) == spearman1['Full']
+    assert round(calculate2_aupr(pred, truth, full_matrix=True), 2) == aupr1['Full']
+
     assert round(om_calculate2_pseudoV(entry1), 2) == pseudoV1["Full"]
     assert round(om_calculate2_js_divergence(entry1), 2) == js_divergence1["Full"]
-    print "     2. Metrics working correctly"
+    print "2. Metrics working correctly"
     print "Finished testing metrics"
 
 def test_scaling():

@@ -361,11 +361,17 @@ def calculate2(pred, truth, full_matrix=True, method='default', pseudo_counts=No
         # functions = ['pseudoV']
         # functions = ['pearson']
         # functions = ['mcc']
-
+        i=0
         for m in functions:
             gc.collect()
-            scores.append(func_dict[m](pred, truth, full_matrix=full_matrix, rnd=rnd))
+            if m == "aupr":
+                scores.append(func_dict[m](pred, truth, full_matrix=full_matrix))
+            else:
+                scores.append(func_dict[m](pred, truth, full_matrix=full_matrix, rnd=rnd))
             # normalize the scores to be between (worst of OneCluster and NCluster scores) and (Truth score)
+            print "raw ", m, ": ", scores[i]
+            i=i+1
+        i=0
         for m in functions:
             gc.collect()
             worst_scores.append(get_worst_score(nssms, truth, func_dict[m], larger_is_worse=(m in larger_is_worse_methods), rnd=rnd))
@@ -374,6 +380,8 @@ def calculate2(pred, truth, full_matrix=True, method='default', pseudo_counts=No
                 scores[i] = set_to_zero(1 - (scores[i] / worst_scores[i]))
             else:
                 scores[i] = set_to_zero((scores[i] - worst_scores[i]) / (1 - worst_scores[i]))
+            print "normalized ", m, ": ", scores[i]
+            i=i+1
         return [scores, np.mean(scores)]
 
     else:
@@ -473,7 +481,7 @@ def calculate2_simpleKL(pred, truth, rnd=1e-50):
     return abs(res)
 
 def calculate2_js_divergence(pred, truth, rnd=1e-50, full_matrix=True, sym=True):
-    print "Calculating JS divergence"
+ #   print "Calculating JS divergence"
     if full_matrix:
         pred_cp = pred
         truth_cp = truth
@@ -690,8 +698,8 @@ def mystd(vec1, vec2, m1, m2):
 
     return s1, s2
 
-def calculate2_aupr(pred, truth, full_matrix=True):
-    print "Calculating AUPR"
+def calculate2_aupr(pred, truth, full_matrix=True, rnd=1e-50):
+ #   print "Calculating AUPR"
     n = truth.shape[0]
     if full_matrix:
         pred_cp = pred.flatten()
@@ -701,9 +709,8 @@ def calculate2_aupr(pred, truth, full_matrix=True):
         pred_cp = pred[inds]
         truth_cp = truth[inds]
     import sklearn.metrics as mt
-
-    precision, recall, thresholds = mt.precision_recall_curve(truth_cp, pred_cp)
-
+    precision, recall, thresholds = mt.precision_recall_curve(truth_cp, pred_cp,pos_label=1)
+    
     if (not full_matrix):
         recall = np.nan_to_num(recall)
         precision = np.nan_to_num(precision)
@@ -716,7 +723,7 @@ def calculate2_aupr(pred, truth, full_matrix=True):
 # note about casting: should be int/float friendly for pred/truth matrices
 
 def calculate2_mcc(pred, truth, full_matrix=True, rnd=1e-50):
-    print "Calculating MCC"
+#    print "Calculating MCC"
     n = truth.shape[0]
     ptype = str(pred.dtype)
     ttype = str(truth.dtype)
@@ -746,6 +753,7 @@ def calculate2_mcc(pred, truth, full_matrix=True, rnd=1e-50):
     #             tn = tn + 1.0
 
     # optimized with fancy boolean magic algorithm to calculate MCC
+   # pdb.set_trace()
     for i in xrange(pred_cp.shape[0]):
         # only round if the matrices are floats
         pred_line = np.round(pred_cp[i, ] + 10.0**(-10)) if 'float' in ptype else pred_cp[i, ]
@@ -910,10 +918,11 @@ def checkForBadTriuIndices(*matrices):
         raise ValidationError('Unequal shapes passed to checkForBadTriuIndices')
     return not fail
 
-def make_all(ccm,ad):
+def make_all(ccm,ad, print_cous=False):
     assert np.allclose(ccm.diagonal(), np.ones((ccm.shape[0])))
     c = makeCMatrix(ccm,ad,ad.T)
-   #print np.min(c)
+    # if (print_cous == True):
+#        print np.round(c,2)
     if(np.min(c)<0):
         np.savetxt('broken_ccm.txt', ccm, fmt='%d')
         np.savetxt('broken_ad.txt', ad, fmt='%d')
@@ -936,10 +945,9 @@ def calculate3Final(pred_ccm, pred_ad, truth_ccm, truth_ad, method="js_divergenc
     f = func_dict.get(method, None)
     #f = method
   #  pdb.set_trace()
-
     t_all = make_all(truth_ccm,truth_ad)
-    pred_all = make_all(pred_ccm, pred_ad)
-    score = f(t_all,pred_all)
+    pred_all = make_all(pred_ccm, pred_ad, print_cous=True)
+    score = f(pred_all,t_all)
    # np.savetxt('truth_ccm.txt', truth_ccm, fmt='%d')
    # np.savetxt('truth_ad.txt', truth_ad, fmt='%d')
  #   print "DEBUG: score: ", score
@@ -962,7 +970,7 @@ def calculate3Final(pred_ccm, pred_ad, truth_ccm, truth_ad, method="js_divergenc
 
  #   print "DEBUG: n_score: ", n_score
     #print method, "\n"
-    if method in ['aupr','mcc']:  
+    if method in ['aupr','mcc','pearson']:  
         worst_score = min(one_score, n_score)
       #  print "aupr or mcc: ", set_to_zero((( (score - worst_score)/ (1-worst_score))+1)/2)
         return [score, one_score, n_score, set_to_zero((( (score - worst_score)/ (1-worst_score))+1)/2)]
@@ -1294,7 +1302,7 @@ def add_pseudo_counts(ccm, ad=None, num=None):
     return ccm
 
 
-def get_worst_score(nssms, truth_ccm, scoring_func, truth_ad=None, subchallenge="SC2", larger_is_worse=True, rnd=1e-50):
+def get_worst_score(nssms, truth_ccm, scoring_func, truth_ad=None,  subchallenge="SC2", larger_is_worse=True, rnd=1e-50):
     """
     Calculate the worst score for SC2 or SC3, to be used as 0 when normalizing the scores
 
@@ -1666,11 +1674,13 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, method='js_divergence'
     if challenge in ['2A']:
         return challengeMapping[challenge]['score_func'](*tpout, add_pseudo=True, pseudo_counts=None, rnd=rnd)
     if challenge in ['2B']:
-        return challengeMapping[challenge]['score_func'](*(pout + tout), rnd=rnd)
+        return challengeMapping[challenge]['score_func'](*(pout + tout), rnd=rnd,method=method)
     if challenge in ['3A']:
         pout[0] = np.dot(pout[0], pout[0].T)
         tout[0] = np.dot(tout[0], tout[0].T)
         print "Method ", method
+        return challengeMapping[challenge]['score_func'](*(pout + tout), method=method)
+    if challenge in ['3B']:
         return challengeMapping[challenge]['score_func'](*(pout + tout), method=method)
 
     return challengeMapping[challenge]['score_func'](*(pout + tout))
