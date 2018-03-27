@@ -33,7 +33,8 @@ def closest_rand_reassign(in_clusters,p_err=0.1):
 
 
 def get_ccm_nvar(scenario, t_ccm=None, t_clusters=None, size_clusters=[100,100,100,100,100,100], prop_split=0.5, n_clusters=6, extra_prop=1.0/12.0, nssms=None):
-  #  print("in get_ccm", scenario)
+#    print("in get_ccm", scenario)
+    # pdb.set_trace()
     size_clusters = np.asarray(size_clusters)
  #   print(size_clusters)
     if t_clusters is None:
@@ -47,11 +48,13 @@ def get_ccm_nvar(scenario, t_ccm=None, t_clusters=None, size_clusters=[100,100,1
         t_ccm = np.dot(t_clusters,t_clusters.T)
     #    print(t_clusters)
     #    print(t_ccm)
-    if scenario in "Truth":
-        return t_ccm, t_clusters
+    if scenario == "Truth":
+        clusters = np.copy(t_clusters)
+        return (np.dot(clusters, clusters.T), clusters)
     elif "ParentIs" in scenario:
-        return (t_ccm, t_clusters)
-    elif scenario is "OneCluster":
+        clusters = np.copy(t_clusters)
+        return (np.dot(clusters, clusters.T), clusters)
+    elif scenario == 'OneCluster':
         if nssms is None:
         #    print(t_ccm.shape)
             out = np.ones(t_ccm.shape)
@@ -65,13 +68,13 @@ def get_ccm_nvar(scenario, t_ccm=None, t_clusters=None, size_clusters=[100,100,1
     elif "SplitCluster" in scenario:
         clusters = np.zeros((np.sum(size_clusters),n_clusters+1))
         clusters[:,:-1] = np.copy(t_clusters)
-        if scenario is "SplitClusterMidOneChild":
+        if scenario == "SplitClusterMidOneChild":
             clusters[np.sum(size_clusters[0:2])+int(size_clusters[2]/(1/(1-prop_split))):np.sum(size_clusters[0:3]),2] = 0
             clusters[np.sum(size_clusters[0:2])+int(size_clusters[2]/(1/(1-prop_split))):np.sum(size_clusters[0:3]),n_clusters] = 1
      #       print(clusters)
            # print(np.dot(clusters, clusters.T))
             return (np.dot(clusters,clusters.T),clusters)
-        elif scenario is "SplitClusterMidMultiChild":
+        elif scenario == "SplitClusterMidMultiChild":
             clusters[np.sum(size_clusters[0:1])+int(size_clusters[1]/(1/(1-prop_split))):np.sum(size_clusters[0:2]),1] = 0
             clusters[np.sum(size_clusters[0:1])+int(size_clusters[1]/(1/(1-prop_split))):np.sum(size_clusters[0:2]),n_clusters] = 1
     #        print(clusters)
@@ -83,7 +86,7 @@ def get_ccm_nvar(scenario, t_ccm=None, t_clusters=None, size_clusters=[100,100,1
     #        print(clusters)
     #        print(np.dot(clusters, clusters.T))
             return (np.dot(clusters,clusters.T),clusters)
-    elif scenario is "MergeClusterBot":
+    elif scenario == "MergeClusterBot":
         clusters = np.copy(t_clusters[:,:-1])
         clusters[np.sum(size_clusters[0:(n_clusters-1)]):np.sum(size_clusters[0:(n_clusters)]),n_clusters-2] = 1 #fix cluster 5 (originally cluster 6)
         clusters[np.sum(size_clusters[0:(n_clusters-2)]):np.sum(size_clusters[0:(n_clusters-1)]),n_clusters-2] = 0 #merge clusters 4 and 5 (from true phylogeny)
@@ -126,7 +129,7 @@ def get_ccm_nvar(scenario, t_ccm=None, t_clusters=None, size_clusters=[100,100,1
         #    print("num extra big", num_extra, big_extra_prop*np.sum(size_clusters[0:n_clusters]))
      #   print("clusters_before",clusters)
         num_extra_clust = map(round,extra_prop*size_clusters)
-        # print "num_extra ", num_extra_clust
+      #  print "num_extra ", num_extra_clust
      #   print("num extra clust",num_extra_clust)
         for i in range(n_clusters):
       #      print(rand_clusters[i],i)

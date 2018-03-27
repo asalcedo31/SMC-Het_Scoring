@@ -53,20 +53,20 @@ def get_ad_nvar(scenario,  t_ad=None, size_clusters=100, nssms=None, prop_split=
        # t_ad[2*size_clusters:3*size_clusters, 5*size_clusters:6*size_clusters] = 3
     if scenario in ["Truth", "SplitClusterBotSame", "MergeClusterBot"]:
         return t_ad
-    elif scenario is "SplitClusterBotDiff":
+    elif scenario == "SplitClusterBotDiff":
         ad = np.copy(t_ad)
     #    print(np.sum(size_clusters[0:5])+int(size_clusters[4]/(1/(1-prop_split))))
         ad[np.sum(size_clusters[0:5]):np.sum(size_clusters[0:5])+int(size_clusters[5]/(1/(1-prop_split))),np.sum(size_clusters[0:5])+int(size_clusters[5]/(1/(1-prop_split))):np.sum(size_clusters[0:6])] = 1.
         
         #ad[int(5*size_clusters):int(5.5*size_clusters),int(5.5*size_clusters):int(6*size_clusters)] = 1.
         return ad
-    elif scenario is "SplitClusterMidOneChild":
+    elif scenario == "SplitClusterMidOneChild":
         ad = np.copy(t_ad)
         ad[np.sum(size_clusters[0:2])+int(size_clusters[2]/(1/(1-prop_split))):np.sum(size_clusters[0:3]),np.sum(size_clusters[0:5]):np.sum(size_clusters[0:6])] = 0
         #ad[int(2.5*size_clusters):int(3*size_clusters),5*size_clusters:int(6*size_clusters)] = 0
         
         return ad
-    elif scenario is "SplitClusterMidMultiChild":
+    elif scenario == "SplitClusterMidMultiChild":
         ad = np.copy(t_ad)
         ad[np.sum(size_clusters[0:1])+int(size_clusters[1]/(1/(1-prop_split))):np.sum(size_clusters[0:2]),np.sum(size_clusters[0:3]):np.sum(size_clusters[0:5])] = 0
       #  ad[int(1.5*size_clusters):int(2*size_clusters),3*size_clusters:int(5*size_clusters)] = 0
@@ -95,25 +95,25 @@ def get_ad_nvar(scenario,  t_ad=None, size_clusters=100, nssms=None, prop_split=
         # ad[0:2*size_clusters, 2*size_clusters:] = 1
         # ad[2*size_clusters:3*size_clusters, 5*size_clusters:] = 1
         return ad
-    elif scenario is "ParentIsSibling":
+    elif scenario == "ParentIsSibling":
         ad = np.copy(t_ad)
         ad[np.sum(size_clusters[0:3]):np.sum(size_clusters[0:4]),np.sum(size_clusters[0:4]):np.sum(size_clusters[0:5])] = 1
             
         # ad[3*size_clusters:4*size_clusters,4*size_clusters:5*size_clusters] = 1
         return ad
-    elif scenario is "ParentIsGrandparent":
+    elif scenario == "ParentIsGrandparent":
         ad = np.copy(t_ad)
         ad[size_clusters[0]:np.sum(size_clusters[0:2]),np.sum(size_clusters[0:4]):np.sum(size_clusters[0:5])] = 0               
         #ad[size_clusters:2*size_clusters,4*size_clusters:5*size_clusters] = 0
         return ad
-    elif scenario is "ParentIsAunt":
+    elif scenario == "ParentIsAunt":
         ad = np.copy(t_ad)
         ad[size_clusters[0]:np.sum(size_clusters[0:2]),np.sum(size_clusters[0:4]):np.sum(size_clusters[0:5])] = 0
         ad[np.sum(size_clusters[0:2]):np.sum(size_clusters[0:3]),np.sum(size_clusters[0:4]):np.sum(size_clusters[0:5])] = 1    
         # ad[size_clusters:2*size_clusters,4*size_clusters:5*size_clusters] = 0
         # ad[2*size_clusters:3*size_clusters,4*size_clusters:5*size_clusters] = 1
         return ad
-    elif scenario is "ParentIsCousin":
+    elif scenario == "ParentIsCousin":
         ad = np.copy(t_ad)
         ad[size_clusters[0]:np.sum(size_clusters[0:2]),np.sum(size_clusters[0:4]):np.sum(size_clusters[0:5])] = 0
         ad[np.sum(size_clusters[0:2]):np.sum(size_clusters[0:3]),np.sum(size_clusters[0:4]):np.sum(size_clusters[0:5])] = 1
@@ -123,23 +123,23 @@ def get_ad_nvar(scenario,  t_ad=None, size_clusters=100, nssms=None, prop_split=
         # ad[2*size_clusters:3*size_clusters,4*size_clusters:5*size_clusters] = 1
         # ad[5*size_clusters:6*size_clusters,4*size_clusters:5*size_clusters] = 1
         return ad
-    elif scenario is "ParentIsSiblingWithChildren":
+    elif scenario == "ParentIsSiblingWithChildren":
         ad = np.copy(t_ad)
         ad[np.sum(size_clusters[0:2]):np.sum(size_clusters[0:3]), range(size_clusters[0],np.sum(size_clusters[0:2]))+range(np.sum(size_clusters[0:3]),np.sum(size_clusters[0:5]))] = 1 #adjust cluster 3's ancestry
         # ad[2*size_clusters:3*size_clusters, range(size_clusters,2*size_clusters)+range(3*size_clusters,5*size_clusters)] = 1 #adjust cluster 3's ancestry
         return ad
-    elif scenario is "ParentIsNieceWithChildren":
+    elif scenario == "ParentIsNieceWithChildren":
         ad = np.copy(t_ad)
         ad[np.sum(size_clusters[0:2]):np.sum(size_clusters[0:3]), range(size_clusters[0],np.sum(size_clusters[0:2]))+range(np.sum(size_clusters[0:3]),np.sum(size_clusters[0:5]))] = 1 #adjust cluster 3's ancestry
         ad[np.sum(size_clusters[0:5]):np.sum(size_clusters[0:6]), range(size_clusters[0],np.sum(size_clusters[0:2]))+range(np.sum(size_clusters[0:3]),np.sum(size_clusters[0:5]))] = 1 #adjust cluster 3's ancestry
         # ad[2*size_clusters:3*size_clusters, range(size_clusters,2*size_clusters)+range(3*size_clusters,5*size_clusters)] = 1 #adjust cluster 3's ancestry
         # ad[5*size_clusters:6*size_clusters, range(size_clusters,2*size_clusters)+range(3*size_clusters,5*size_clusters)] = 1 #adjust cluster 6's ancestry
         return ad
-    elif scenario is "OneCluster":
+    elif scenario == "OneCluster":
         if nssms is None:
             return np.zeros(t_ad.shape)
         return np.zeros((nssms,nssms), dtype=np.int8)
-    elif scenario is "NClusterOneLineage":
+    elif scenario == "NClusterOneLineage":
         # np.triu() returns a copy, this does the triu() in memory instead
 #        if nssms is None:
 #            return np.triu(np.ones(t_ad.shape))
@@ -148,12 +148,12 @@ def get_ad_nvar(scenario,  t_ad=None, size_clusters=100, nssms=None, prop_split=
             for j in xrange(i + 1):
                 ad[i, j] = 0
         return ad
-    elif scenario is "NClusterTwoLineages":
+    elif scenario == "NClusterTwoLineages":
         ad = np.triu(np.ones(t_ad.shape), k=1)
         ad[2:np.sum(size_clusters[0:3])+2,np.sum(size_clusters[0:3])+2:] = 0
         # ad[2:3*size_clusters+2,3*size_clusters+2:] = 0
         return ad
-    elif scenario is "NClusterCorrectLineage":
+    elif scenario == "NClusterCorrectLineage":
         ad = np.triu(np.ones(t_ad.shape), k=1)
         ad[size_clusters[0]:np.sum(size_clusters[0:2]),range(np.sum(size_clusters[0:2]),np.sum(size_clusters[0:3]))+range(np.sum(size_clusters[0:5]),np.sum(size_clusters[0:6]))] = 0 # equivalent of cluster 2 from true AD matrix
         ad[np.sum(size_clusters[0:2]):np.sum(size_clusters[0:3]),np.sum(size_clusters[0:3]):np.sum(size_clusters[0:5])] = 0 # cluster 3 from true AD matrix

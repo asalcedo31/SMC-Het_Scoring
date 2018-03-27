@@ -3,6 +3,7 @@ from permutations import*
  
 import gc
 import random
+import pdb
 
 def om_validate2A (pred_data, truth_data, nssms_x, nssms_y, filter_mut=None, mask=None, subchallenge="2A"):
     '''
@@ -15,7 +16,10 @@ def om_validate2A (pred_data, truth_data, nssms_x, nssms_y, filter_mut=None, mas
     :subchallenge: subchallenge scored
     :return: overlapping matrix and (for subchallenge 3) a list which specifies the cluster of each mutation
     '''
-    pred_data = pred_data.split('\n')
+  #  print("omvalidate2A")
+
+    if type(pred_data) is str:
+        pred_data = pred_data.split('\n')
     pred_data = filter(None, pred_data)
     pred_data = [x for i, x in enumerate(pred_data) if i in mask] if mask else pred_data
      
@@ -29,10 +33,11 @@ def om_validate2A (pred_data, truth_data, nssms_x, nssms_y, filter_mut=None, mas
             pred_cluster_entries.add(pred_data[i])
         except ValueError:
             raise ValidationError("Cluster ID in line %d (ssm %s) can not be cast to an int", (i+1, pred_data[i][0]))
-
+    #pdb.set_trace()
     num_pred_clusters = max(pred_cluster_entries)
 
-    truth_data = truth_data.split('\n')
+    if type(truth_data) is str:
+        truth_data = truth_data.split('\n')
     truth_data = filter(None, truth_data)
     truth_data = [x for i, x in enumerate(truth_data) if i in mask] if mask else truth_data
 
@@ -48,10 +53,9 @@ def om_validate2A (pred_data, truth_data, nssms_x, nssms_y, filter_mut=None, mas
             raise ValidationError("Cluster ID in line %d (ssm %s) can not be cast to an int", (i+1, truth_data[i][0]))
 
     num_truth_clusters = max(truth_cluster_entries)
-
     om = np.zeros((num_truth_clusters, num_pred_clusters), dtype=int)
 
-    # print len(filter_mut)
+   # print len(filter_mut)
     new_pred_data = []
     if filter_mut is not None:
         for i in range(len(pred_data)):     
@@ -63,10 +67,11 @@ def om_validate2A (pred_data, truth_data, nssms_x, nssms_y, filter_mut=None, mas
     for i in range(len(new_pred_data)):
         # print(new_pred_data[i]), 
         om[truth_data[i]-1, new_pred_data[i]-1] += 1
-
+  #  print("om shape", om)
     if subchallenge is "3A":
         return om, truth_data
 
+    
     return om
 
 def om_calculate2A(om, full_matrix=True, method='default', add_pseudo=True, pseudo_counts=None, rnd=1e-50):
