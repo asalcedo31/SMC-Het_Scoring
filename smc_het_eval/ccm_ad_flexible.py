@@ -17,21 +17,26 @@ class Node:
 		if self.children is not None:
 			for child in children:
 				self.children = np.append(self.children,child)
-	def remove_child(self, child_name):
+	def remove_child(self, child_names):
+		#put single node names into a list 
+		if isinstance(child_names, basestring):
+			child_names = [child_names]
+		#list of indices to remove
+		to_delete = np.array([],np.int32)
 		for idx in range(len(self.children)):
-			if self.children[idx].name == child_name:
+			if self.children[idx].name in child_names:
 				print "removing ", self.children[idx].name, idx
-				self.children = np.delete(self.children, idx)
-				#only want to remove one child at a time or the loop breaks
-				return None
+				to_delete = np.append(to_delete, idx)
+		self.children = np.delete(self.children, to_delete)
+		return None
 	def gather_desc_nodes(self, top_node= None):
 		if top_node is None:
 			top_node = self
-			for child in self.children:
-				top_node.desc = np.append(top_node.desc, child.name)
-				if len(child.children) > 0:
-					#get the indices for the descendants of each child
-					child.gather_desc_nodes(top_node)	
+		for child in self.children:
+			top_node.desc = np.append(top_node.desc, child.name)
+			if len(child.children) > 0:
+				#get the names of the descendants of each child
+				child.gather_desc_nodes(top_node)	
 	def gather_child_idx(self,top_node=None):
 		#top node is the node for which we will gather all of the descendant indices
 		if top_node is None:
@@ -120,20 +125,13 @@ class Tree:
 			parent = node
 		new_node = self.create_node(new_name,parent=parent,values=node_idx[idx_split])
 
-	def merge_nodes(self, node_name1, node_name2, collapse = False):
+	def merge_nodes(self, node_name1, node_name2):
 		node1 = self.get_node(node_name1)
 		node2, idx2 = self.get_node(node_name2, return_idx=True)
-		if collapse == False:
-			node1.value = np.concatenate((node1.value,node2.value))
-			node1.remove_child(node_name2)
-			if len(node2.children) > 0 :
-				node1.add_children(node2.children)
-		elif collapse == True:
-			print "before", node2.value
-			node2.collapse_children()
-			print "after", node2.value
-			node1.value = np.concatenate((node1.value,node2.value))
-			print "merged", node1.value
+		node1.value = np.concatenate((node1.value,node2.value))
+		node1.remove_child(node_name2)
+		if len(node2.children) > 0 :
+			node1.add_children(node2.children)
 		self.nodes = np.delete(self.nodes, idx2)
 		# print self.nodes
 		# print node1.values 
@@ -144,6 +142,28 @@ class Tree:
 		for name in node.desc:
 			d_node, d_idx = self.get_node(name,return_idx = True)
 			self.nodes = np.delete(self.nodes, d_idx)
+
+	def switch_parent(self, node_name,new_parent_name):
+		node = self.get_node(node_name)
+		new_parent_node = self.get_node(new_parent_name)
+		old_parent_node = self.get_node(node.parent)
+		node.parent = new_parent_node
+		new_parent_node.add_children(node)
+		old_parent_node.remove_children(node)
+		#update descendants of the new parent node
+		if len(new_parent_node.desc) > 0:
+			new_parent_node.gather_desc_nodes()
+		if len(new_parent_node.desc_idx) > 0:
+			new_parent_node.gather_child_idx()
+		#update descendants of the old parent node
+		if len(old_parent_node.desc) > 0:
+			old_parent_node.gather_desc_nodes()
+		if len(old_parent_node.desc_idx) > 0:
+			old_parent_node.gather_child_idx()
+
+
+
+
 
 def baseline_ad(scenario,print_ad=False, print_ccm = False):
 	ad=get_ad_nvar(scenario,size_clusters=[3,2,2,3,2,4])
@@ -177,18 +197,18 @@ def split_cluster(name_split=None, name_new=None, same=True):
 	ad = tree.ad()
 
 	# print tree.ccm()
-	print ad
+#	print ad
 	return tree
 def merge_clusters(node_name1=None, node_name2=None):
 	tree = make_truth()
 	print(len(tree.nodes))
 	tree.merge_nodes(node_name1, node_name2)
 	n1 = tree.get_node(node_name1)
-	print n1.value
-	print n1.name
-	print n1
+	# print n1.value
+	# print n1.name
+	# print n1
 	#print tree.nodes
-	print tree.ccm()
+#	print tree.ccm()
 	# print tree.ad()
 	return tree
 
@@ -199,12 +219,14 @@ def collapse_node(node_name):
 	print tree.ad()
 	return tree
 
-def matches(scenario, f, **kwargs):
+def matches(scenario, f, pass_l, scenarios,  **kwargs):
 	orig_ad, orig_ccm = baseline_ad(scenario)
 	new_tree = f(**kwargs)
 	new_ad = new_tree.ad()
 
 	new_ccm = new_tree.ccm()
+	print scenario
+	pass_v = 0
 	if (np.array_equal(new_ad,orig_ad)):
 	    print('Pass AD')
 	    # return('Pass')
@@ -212,6 +234,7 @@ def matches(scenario, f, **kwargs):
 		print('Fail AD')
 		print new_ad
 		print orig_ad
+		pass_v = 1
 	if (np.array_equal(new_ccm,orig_ccm)):
 	    print('Pass CCM')
 	    # return('Pass')
@@ -219,19 +242,31 @@ def matches(scenario, f, **kwargs):
 		print('Fail CCM')
 		print new_ccm
 		print orig_ccm
-
+		pass_v = 1
+	pass_l.append(pass_v)
+	scenarios.append(scenario)
+def test_all():
+	pass_l = []
+	scenarios = []
+	matches('Truth',  make_truth, pass_l, scenarios)
+	matches('SplitClusterBotSame', split_cluster, pass_l, scenarios, name_split='N6', name_new='N7',same=True)
+	matches('SplitClusterBotDiff', split_cluster, pass_l, scenarios, name_split='N6', name_new='N7',same=False)
+	matches('SplitClusterMidOneChild', split_cluster,  pass_l, scenarios,name_split='N3', name_new='N7',same=True)
+	matches('SplitClusterMidMultiChild', split_cluster, pass_l, scenarios, name_split='N2', name_new='N7',same=True)
+	matches('MergeClusterMid&BotOneChild', merge_clusters, pass_l, scenarios, node_name1='N3',node_name2='N6')
+	matches('MergeClusterBot', merge_clusters, pass_l, scenarios, node_name1='N4',node_name2='N5')
+	matches('MergeClusterTop&Mid', merge_clusters,  pass_l, scenarios,node_name1='N1',node_name2='N2')
+	matches('MergeClusterMid&BotMultiChild', merge_clusters, pass_l, scenarios, node_name1='N2',node_name2='N5')
+	print pass_l, scenarios
+	if any(pass_l)>0:
+		print "failed at", scenarios[pass_l>0]
+	else:
+		print "all passed"
 # split(name_split='N2', name_new='N7',same=False)
 # merge_clusters('N3','N6')
 # baseline_ad('MergeClusterMid&BotMultiChild', print_ccm=True)
 # baseline_ad('Truth', print_ccm=True)
 # collapse_node('N2')
-# matches('Truth', make_truth)
-#matches('SplitClusterBotDiff', split_cluster_bot, same=False)
-# matches('SplitClusterBotSame', split_cluster_bot, name_split='N6', name_new='N7',same=True)
-# matches('SplitClusterBotDiff', split_cluster_bot, name_split='N6', name_new='N7',same=False)
-#matches('SplitClusterMidOneChild', split_cluster_bot, name_split='N3', name_new='N7',same=True)
-#matches('SplitClusterMidMultiChild', split_cluster, name_split='N2', name_new='N7',same=True)
-# matches('MergeClusterMid&BotOneChild', merge_clusters, node_name1='N3',node_name2='N6')
-# matches('MergeClusterBot', merge_clusters, node_name1='N4',node_name2='N5')
-# matches('MergeClusterTop&Mid', merge_clusters, node_name1='N1',node_name2='N2')
-matches('MergeClusterMid&BotMultiChild', merge_clusters, node_name1='N2',node_name2='N5')
+test_all()
+
+
