@@ -14,10 +14,15 @@ class Node:
 		if parent is not None:
 			parent.add_children([self])
 	def add_children(self, children):
+		#children are node instances
+		#put single nodes into a list
+		if isinstance(children, list)==False and isinstance(children,np.ndarray) == False:
+			children = [children]
 		if self.children is not None:
 			for child in children:
 				self.children = np.append(self.children,child)
 	def remove_child(self, child_names):
+		#child_names is a string or string list
 		#put single node names into a list 
 		if isinstance(child_names, basestring):
 			child_names = [child_names]
@@ -82,7 +87,6 @@ class Tree:
 	def ccm(self):
 		nssms = self.comp_nssms()
 		out = np.zeros((nssms,len(self.nodes)))
-		print nssms
 		i = 0
 		for node in self.nodes:
 			out[node.value,i] = 1
@@ -99,7 +103,6 @@ class Tree:
 			out[np.ix_(node.value, desc_idx)] = 1
 		return out
 	def get_node(self,name, return_idx=False):
-		print len(self.nodes)
 		for idx in range(len(self.nodes)):
 			node = self.nodes[idx]
 			if node.name == name:
@@ -133,8 +136,7 @@ class Tree:
 		if len(node2.children) > 0 :
 			node1.add_children(node2.children)
 		self.nodes = np.delete(self.nodes, idx2)
-		# print self.nodes
-		# print node1.values 
+
 	def collapse_node(self, node_name):
 		node = self.get_node(node_name)
 		node.gather_desc_nodes()
@@ -145,11 +147,13 @@ class Tree:
 
 	def switch_parent(self, node_name,new_parent_name):
 		node = self.get_node(node_name)
+		print "old parent",node.parent.name
+		print "new parent", new_parent_name
 		new_parent_node = self.get_node(new_parent_name)
-		old_parent_node = self.get_node(node.parent)
+		old_parent_node = self.get_node(node.parent.name)
 		node.parent = new_parent_node
 		new_parent_node.add_children(node)
-		old_parent_node.remove_children(node)
+		old_parent_node.remove_child(node.name)
 		#update descendants of the new parent node
 		if len(new_parent_node.desc) > 0:
 			new_parent_node.gather_desc_nodes()
@@ -161,13 +165,45 @@ class Tree:
 		if len(old_parent_node.desc_idx) > 0:
 			old_parent_node.gather_child_idx()
 
-
-
+	def extra_node(self,extra_prop, parent_name, all_nodes=True, num_nodes = 2):
+		drawn_nodes = []
+		if all_nodes == True:
+			drawn_nodes = self.nodes
+		else:
+			drawn_nodes = np.random.choice(self.nodes, num_nodes, replace = False)
+		extra_idx = np.array([],np.int32)
+		for node in drawn_nodes:
+			num_taken = int(round(extra_prop*len(node.value)))
+			taken_idx = []
+			if num_taken == 1:
+				taken_idx = 0
+			elif num_taken == 0:
+				taken_idx = []
+			else:
+				taken_idx = range(num_taken-1)
+			taken = node.value[taken_idx]
+			# print node.name, node.value, num_taken
+			# print taken_idx, taken
+			extra_idx = np.append(extra_idx, taken)
+			node.value = np.delete(node.value,taken_idx)
+		# 	print "after", node.value
+		# # print "extra", extra_idx
+		# print self.nodes[1].children[0].name
+		# print self.nodes[1].children[0].value
+		# self.nodes[1].gather_child_idx()
+		# print self.nodes[1].desc_idx
+		if parent_name is not None:
+			parent_node = self.get_node(parent_name)
+			self.create_node('Extra', parent=parent_node,values=extra_idx)
+		else:
+			extra = self.create_node('Extra', values=extra_idx)
+			extra.add_children(self.root)
+			self.root = extra 
 
 
 def baseline_ad(scenario,print_ad=False, print_ccm = False):
-	ad=get_ad_nvar(scenario,size_clusters=[3,2,2,3,2,4])
-	ccm, clusters = get_ccm_nvar(scenario,size_clusters=[3,2,2,3,2,4])
+	ad=get_ad_nvar(scenario,size_clusters=[3,2,2,3,2,4], extra_prop=2.0/12.0)
+	ccm, clusters = get_ccm_nvar(scenario,size_clusters=[3,2,2,3,2,4], extra_prop=2.0/12.0)
 	if print_ad == True:
 		print ad
 	if print_ccm == True:
@@ -187,36 +223,32 @@ def make_truth():
 
 def split_cluster(name_split=None, name_new=None, same=True):
 	tree = make_truth()
-	print "same", same
 	tree.split_node(name_split,name_new,same=same)
 	n6 = tree.get_node(name_split)
-	print n6.value
 	n7 = tree.get_node(name_new)
-	print n7.value
-	print len(tree.nodes)
 	ad = tree.ad()
-
-	# print tree.ccm()
-#	print ad
 	return tree
+
 def merge_clusters(node_name1=None, node_name2=None):
 	tree = make_truth()
-	print(len(tree.nodes))
 	tree.merge_nodes(node_name1, node_name2)
 	n1 = tree.get_node(node_name1)
-	# print n1.value
-	# print n1.name
-	# print n1
-	#print tree.nodes
-#	print tree.ccm()
-	# print tree.ad()
 	return tree
 
 def collapse_node(node_name):
 	tree = make_truth()
 	tree.collapse_node(node_name)
-	print tree.ccm()
-	print tree.ad()
+	return tree
+
+def switch_parent_cluster(node_name=None, new_parent_name=None):
+	tree = make_truth()
+	tree.switch_parent(node_name, new_parent_name)
+	#print tree.ad()
+	return tree
+
+def extra_cluster(extra_prop=1.0/6.0, parent_name=None, all_nodes = True, num_nodes = None):
+	tree = make_truth()
+	tree.extra_node(extra_prop,parent_name,all_nodes=all_nodes, num_nodes=num_nodes)
 	return tree
 
 def matches(scenario, f, pass_l, scenarios,  **kwargs):
@@ -232,7 +264,9 @@ def matches(scenario, f, pass_l, scenarios,  **kwargs):
 	    # return('Pass')
 	else: 
 		print('Fail AD')
+		print "new"
 		print new_ad
+		print "orig"
 		print orig_ad
 		pass_v = 1
 	if (np.array_equal(new_ccm,orig_ccm)):
@@ -240,11 +274,16 @@ def matches(scenario, f, pass_l, scenarios,  **kwargs):
 	    # return('Pass')
 	else: 
 		print('Fail CCM')
+		print "new"
 		print new_ccm
+		print "orig"
 		print orig_ccm
 		pass_v = 1
 	pass_l.append(pass_v)
 	scenarios.append(scenario)
+
+
+
 def test_all():
 	pass_l = []
 	scenarios = []
@@ -257,6 +296,18 @@ def test_all():
 	matches('MergeClusterBot', merge_clusters, pass_l, scenarios, node_name1='N4',node_name2='N5')
 	matches('MergeClusterTop&Mid', merge_clusters,  pass_l, scenarios,node_name1='N1',node_name2='N2')
 	matches('MergeClusterMid&BotMultiChild', merge_clusters, pass_l, scenarios, node_name1='N2',node_name2='N5')
+	matches('ParentIsSibling', switch_parent_cluster, pass_l, scenarios, node_name='N5',new_parent_name='N4')
+	matches('ParentIsAunt', switch_parent_cluster, pass_l, scenarios, node_name='N5',new_parent_name='N3')
+	matches('ParentIsCousin', switch_parent_cluster, pass_l, scenarios, node_name='N5',new_parent_name='N6')
+	matches('ParentIsNieceWithChildren', switch_parent_cluster, pass_l, scenarios, node_name='N2',new_parent_name='N6')
+	matches('ParentIsGrandparent', switch_parent_cluster, pass_l, scenarios, node_name='N5',new_parent_name='N1')
+	matches('SmallExtraCurBot', extra_cluster, pass_l, scenarios, parent_name='N3')
+	#original SmallExtraMid is wrong
+	matches('SmallExtraMid', extra_cluster, pass_l, scenarios, parent_name='N1')
+	matches('SmallExtraTop', extra_cluster, pass_l, scenarios, parent_name=None)
+
+
+
 	print pass_l, scenarios
 	if any(pass_l)>0:
 		print "failed at", scenarios[pass_l>0]
@@ -264,9 +315,15 @@ def test_all():
 		print "all passed"
 # split(name_split='N2', name_new='N7',same=False)
 # merge_clusters('N3','N6')
-# baseline_ad('MergeClusterMid&BotMultiChild', print_ccm=True)
+# baseline_ad('SmallExtraTop', print_ad=True, print_ccm=False)
+# tree = extra_cluster(parent_name=None)
+# tree = switch_parent_cluster('N5','N6')
+# print tree.ad()
+# print tree.ccm()
+matches('SmallExtraTop', extra_cluster, [], [], parent_name=None)
+
 # baseline_ad('Truth', print_ccm=True)
 # collapse_node('N2')
-test_all()
+# test_all()
 
 
