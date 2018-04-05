@@ -1,7 +1,7 @@
 import numpy as np;
 from make_ad_nvar import *
 from make_ccm import *
-
+import pprint
 
 class Node:
 	def __init__(self,value, name, parent=None):
@@ -30,7 +30,6 @@ class Node:
 		to_delete = np.array([],np.int32)
 		for idx in range(len(self.children)):
 			if self.children[idx].name in child_names:
-				print "removing ", self.children[idx].name, idx
 				to_delete = np.append(to_delete, idx)
 		self.children = np.delete(self.children, to_delete)
 		return None
@@ -48,7 +47,8 @@ class Node:
 			top_node = self
 		for child in self.children:
 			#get the indices for each child
-			top_node.desc_idx = np.concatenate((top_node.desc_idx, child.value))
+
+			top_node.desc_idx = np.append(top_node.desc_idx, child.value)
 			if len(child.children) > 0:
 				#get the indices for the descendants of each child
 				child.gather_child_idx(top_node)
@@ -63,9 +63,12 @@ class Node:
 			self.children = np.array([])
 
 class Tree:
-	def __init__(self,size,name):
+	def __init__(self,name, size=None, values=None):
 		self.nodes = []
-		root_idx = self.node_indices(size)
+		if values is None:
+			root_idx = self.node_indices(size)
+		else:
+			root_idx = values
 		self.root = Node(root_idx,name)
 		self.nodes = [self.root]
 	def node_indices(self,size):
@@ -82,7 +85,7 @@ class Tree:
 		self.nodes.append(node)
 		return node
 	def comp_nssms(self):
-		nssms = reduce(lambda x,y: x + len(y.value),self.nodes ,0)
+		nssms = reduce(lambda x,y: x + y.value.size,self.nodes ,0)
 		return(nssms)
 	def ccm(self):
 		nssms = self.comp_nssms()
@@ -100,7 +103,12 @@ class Tree:
 		for node in self.nodes:
 			node.gather_child_idx()
 			desc_idx = node.desc_idx
-			out[np.ix_(node.value, desc_idx)] = 1
+			rows = []
+			if isinstance(node.value, np.int64):
+				rows = [node.value]
+			else:
+				rows = node.value
+			out[np.ix_(rows, desc_idx)] = 1
 		return out
 	def get_node(self,name, return_idx=False):
 		for idx in range(len(self.nodes)):
@@ -147,8 +155,6 @@ class Tree:
 
 	def switch_parent(self, node_name,new_parent_name):
 		node = self.get_node(node_name)
-		print "old parent",node.parent.name
-		print "new parent", new_parent_name
 		new_parent_node = self.get_node(new_parent_name)
 		old_parent_node = self.get_node(node.parent.name)
 		node.parent = new_parent_node
@@ -182,16 +188,8 @@ class Tree:
 			else:
 				taken_idx = range(num_taken-1)
 			taken = node.value[taken_idx]
-			# print node.name, node.value, num_taken
-			# print taken_idx, taken
 			extra_idx = np.append(extra_idx, taken)
 			node.value = np.delete(node.value,taken_idx)
-		# 	print "after", node.value
-		# # print "extra", extra_idx
-		# print self.nodes[1].children[0].name
-		# print self.nodes[1].children[0].value
-		# self.nodes[1].gather_child_idx()
-		# print self.nodes[1].desc_idx
 		if parent_name is not None:
 			parent_node = self.get_node(parent_name)
 			self.create_node('Extra', parent=parent_node,values=extra_idx)
@@ -212,7 +210,7 @@ def baseline_ad(scenario,print_ad=False, print_ccm = False):
 	return ad,ccm
 
 def make_truth():
-	tree = Tree(3,'N1')
+	tree = Tree(name='N1', size=3)
 	root = tree.root
 	node2 = tree.create_node('N2',tree.root,2)
 	node3 = tree.create_node('N3',tree.root,2)
@@ -220,7 +218,66 @@ def make_truth():
 	node5 = tree.create_node('N5',node2,2)
 	node6 = tree.create_node('N6',node3,4)
 	return(tree)
+def n_cluster_one_lineage(nssm, ordered =True):
+	if ordered == True:
+		tree = Tree(name ='N0', size =1)
+		ssms = range(1,nssm)
+	last_ssm  = tree.root
+	for ssm in ssms:
+		node = tree.create_node('N'+str(ssm), parent = last_ssm, size =1)
+		last_ssm = node
+	return tree
 
+def one_cluster(nssm, ordered =True):
+	tree = Tree(name ='N0', size = nssm)
+	return tree
+
+def n_cluster_two_lineages(nssm, ordered = True):
+	if ordered == True:
+		tree = Tree(name='N0', size =1)
+		l1_root = tree.create_node('N1', parent = tree.root, size =1)
+		l1_ssms = range(1,nssm/2)
+
+	last_ssm  = l1_root
+	for ssm in l1_ssms:
+		node = tree.create_node('N'+str(ssm), parent = last_ssm, size =1)
+		last_ssm = node
+
+	l2_root = tree.create_node('N2', parent = tree.root, size =1)
+	l2_ssms = range((nssm/2+1),(nssm-1))
+	last_ssm  = l2_root
+	for ssm in l2_ssms:
+		node = tree.create_node('N'+str(ssm), parent = last_ssm, size =1)
+		last_ssm = node
+	return tree
+
+
+def ncluster_correct_lineage(tree=None):
+	if tree is None:
+		tree = make_truth()
+	cluster_last_node = {}
+	cluster_tree = []
+	for node_idx in range(len(tree.nodes)):
+		node = tree.nodes[node_idx]
+		last_node = None
+		for idx in range(len(node.value)):
+			parent = ''
+			if node.parent is None and idx == 0:
+				cluster_tree = Tree("N0",values = node.value[idx])
+				last_node = cluster_tree.root
+				continue
+			else:
+				if idx == 0:
+					parent = cluster_last_node[node.parent.name]				
+				else: 
+					parent = last_node
+			new_node = cluster_tree.create_node('N', parent = parent, values=node.value[idx])
+			if idx == (len(node.value)-1):
+				cluster_last_node[node.name] = new_node
+			last_node = new_node
+	# print cluster_tree.ccm()
+	return cluster_tree
+			
 def split_cluster(name_split=None, name_new=None, same=True):
 	tree = make_truth()
 	tree.split_node(name_split,name_new,same=same)
@@ -279,8 +336,7 @@ def matches(scenario, f, pass_l, scenarios,  **kwargs):
 		print "orig"
 		print orig_ccm
 		pass_v = 1
-	pass_l.append(pass_v)
-	scenarios.append(scenario)
+	pass_l.append((scenario, pass_v))
 
 
 
@@ -305,25 +361,31 @@ def test_all():
 	#original SmallExtraMid is wrong
 	matches('SmallExtraMid', extra_cluster, pass_l, scenarios, parent_name='N1')
 	matches('SmallExtraTop', extra_cluster, pass_l, scenarios, parent_name=None)
-
-
-
-	print pass_l, scenarios
-	if any(pass_l)>0:
-		print "failed at", scenarios[pass_l>0]
+	matches('NClusterCorrectLineage', ncluster_correct_lineage, pass_l, scenarios)
+	matches('NClusterOneLineage', n_cluster_one_lineage, pass_l, scenarios,nssm = 16)
+	matches('NClusterTwoLineages', n_cluster_two_lineages, pass_l, scenarios,nssm=16)
+	matches('OneCluster', one_cluster, pass_l, scenarios,nssm=16)
+	fail = [sc[0] for sc in pass_l if sc[1] > 0]
+	if len(fail)>0:
+		for sc in fail:
+			print "failed at", sc  #print scenarios#scenarios[np.where(pass_l>0)]
 	else:
 		print "all passed"
+# tree = make_truth()
+# ncluster_correct_lineage()
 # split(name_split='N2', name_new='N7',same=False)
 # merge_clusters('N3','N6')
-# baseline_ad('SmallExtraTop', print_ad=True, print_ccm=False)
+# baseline_ad('OneCluster', print_ad=False, print_ccm=True)
 # tree = extra_cluster(parent_name=None)
 # tree = switch_parent_cluster('N5','N6')
 # print tree.ad()
 # print tree.ccm()
-matches('SmallExtraTop', extra_cluster, [], [], parent_name=None)
-
+# matches('NClusterCorrectLineage', ncluster_correct_lineage, [], [])
+# tree = one_cluster(16)
+# print tree.ad()
+# print tree.ccm()
 # baseline_ad('Truth', print_ccm=True)
 # collapse_node('N2')
-# test_all()
+test_all()
 
 
