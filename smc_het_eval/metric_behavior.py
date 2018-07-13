@@ -1,6 +1,6 @@
 from SMCScoring import *
-from make_ccm import *
-from make_ad_nvar import *
+#from make_ccm import *
+#from make_ad_nvar import *
 #from memory_profiler import profile
 import multiprocessing as mp
 import numpy as np
@@ -658,7 +658,6 @@ def scoring3A_behavior_var(methods='js_divergence', in_scenarios = None, verbose
         #res = [pool.apply(score_sc, args=(t_ccm, t_ad, t_clusters, sc, methods, size_clusters, n_ssm, i, in_small_extra_prop, in_big_extra_prop,continuous,)) for sc in scenario_set]
             res = np.asarray(res)
             if i == 0 and sc == scenario_set[0]:
-                print "here"
                 outres = res
             else: 
                  outres = np.vstack((outres,res))
@@ -692,18 +691,23 @@ def score_sc(t_ccm, t_ad, t_clusters, sc, methods, size_clusters, n_ssm, i, in_s
 
         if (continuous == True):
             ccm = m_cont(t_ccm, ccm)      
-            ad = ad_cont(t_ad, ad,ccm)      
+            ad = ad_cont(t_ad, ad,ccm)
+        print np.round(ccm,2)
         score3A =  [calculate3Final(ccm, ad, t_ccm, t_ad, method=method)[3] for method in methods]
         score3A = map(lambda x: 0 if np.isnan(x) else x , score3A)
 
         t_2A = collapse_clusters_2A(t_clusters)
         p_2A = collapse_clusters_2A(clusters)
         muts = range(n_ssm)
-        tpout = []
-        vout, raw = om_validate2A(p_2A, t_2A, n_ssm, n_ssm, muts, subchallenge='3A')
-        tpout.append(vout)
-        tpout.append(raw)
-        score2A =  [om_calculate2A(*tpout, method=method, add_pseudo=True, pseudo_counts=None, rnd=1e-50) for method in methods]
+        score2A=[]
+        if continuous == True:
+            score2A = [calculate2(ccm, t_ccm,  method=method) for method in methods]
+        else:
+            tpout = []
+            vout, raw = om_validate2A(p_2A, t_2A, n_ssm, n_ssm, muts, subchallenge='3A')
+            tpout.append(vout)
+            tpout.append(raw)
+            score2A =  [om_calculate2A(*tpout, method=method, add_pseudo=True, pseudo_counts=None, rnd=1e-50) for method in methods]
         score2A = map(lambda x: 0 if np.isnan(x) else x , score2A)
 
         out3A = np.array((sc_orig,i,'3A',score3A),dtype=np.dtype([('sc','S40'),('rep','int'),('chal','S40'),('scores', str(len(methods))+'float32')]))
@@ -925,8 +929,8 @@ def run_2A_3A(methods='js_divergence', verbose=False,n_ssm=600,n_clusters=6,in_b
         chal = 'B'
     else: 
         chal = 'A'
-    name2A = tsv_dir + 'scoring2'+ str(chal)+'_cases_'+ '_nc'+ str(n_clusters) +'_rep'+str(rep)+'_s'+ str(n_ssm) + '_bep'+str(round(in_big_extra_prop,2))+'_sep'+str(round(in_small_extra_prop,2))
-    name3A = tsv_dir + 'scoring3'+ str(chal)+ '_cases_'+ '_nc'+ str(n_clusters) +'_rep'+str(rep)+'_s'+ str(n_ssm) + '_bep'+str(round(in_big_extra_prop,2))+'_sep'+str(round(in_small_extra_prop,2))
+    name2A = tsv_dir + 'scoring2_3'+ str(chal)+'_cases_'+ '_nc'+ str(n_clusters) +'_rep'+str(rep)+'_s'+ str(n_ssm) + '_bep'+str(round(in_big_extra_prop,2))+'_sep'+str(round(in_small_extra_prop,2))
+    name3A = tsv_dir + 'scoring3_3'+ str(chal)+ '_cases_'+ '_nc'+ str(n_clusters) +'_rep'+str(rep)+'_s'+ str(n_ssm) + '_bep'+str(round(in_big_extra_prop,2))+'_sep'+str(round(in_small_extra_prop,2))
     if rand == True:
         name2A = name2A + '_rand'
         name3A = name3A + '_rand'
@@ -1564,9 +1568,9 @@ if __name__ == '__main__':
 
   #  print 'Scoring 3A Behavior using multiple metrics with different weights...'
     #run_2A_3A(methods=["js_divergence", "mcc", "aupr"], rep=1, n_ssm=1200, in_small_extra_prop=0.02, in_big_extra_prop=0.15, rand=True)
-    np.random.seed(14)
-    run_2A_3A(methods=["js_divergence", "mcc", "aupr"], rep=50, n_ssm=1200, in_small_extra_prop=0.05, in_big_extra_prop=0.15, rand=False, continuous=True)
-    #out = scoring3A_behavior_var(methods=["js_divergence","mcc", "aupr"], rep=1, n_ssm=120, in_small_extra_prop=0.05, in_big_extra_prop=0.15, continuous=True)
+    np.random.seed(28)
+    #run_2A_3A(methods=["js_divergence", "mcc", "aupr", "pearson"], rep=25, n_ssm=1200, in_small_extra_prop=0.05, in_big_extra_prop=0.15, rand=False, continuous=True)
+    out = scoring3A_behavior_var(methods=["js_divergence","mcc", "aupr", "pearson"], in_scenarios=[ 'OneCluster','NClusterOneLineage'], rep=1, n_ssm=12, in_small_extra_prop=0.05, in_big_extra_prop=0.15, continuous=True)
   # #  behaviour_2A_split(n_ssms=1000)
   # # #  behaviour_2A_merged(n_ssms=1000)
     # if sys.argv[1] == 'extra':

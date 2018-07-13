@@ -11,8 +11,8 @@ library(PRROC)
 library(mccr)
 library(pryr)
 #script.dir <- dirname(sys.frame(1)$ofile)
-plots.dir <- '~/Shad_scoring/smc_het_eval/scoring_metric_data/sim_plots/'
-text.dir <- '~/Shad_scoring/smc_het_eval/scoring_metric_data/sim_text/'
+plots.dir <- '~/Shad_scoring/smc_het_eval/scoring_metric_data/sim_plots_all/'
+text.dir <- '~/Shad_scoring/smc_het_eval/scoring_metric_data/sim_text_all/'
 #setwd(script.dir)
 
 
@@ -45,8 +45,6 @@ sim.params = c("K.u", "K.n", "epsilon1", "epsilon2")
 #### HELPER FUNCTIONS ########################################
 
 #### Data Creation Helper Functions ##########################
-print("mem1")
-print(mem_used())
 #### assign.useful ###########################################
 # Assign elements from classes to useful clusters
 #
@@ -102,8 +100,6 @@ assign.useful <- function(class.pairs,nC.u){
   }
   return(class.elem)
 }
-print("mem2")
-print(mem_used())
 
 #### assign.noise ##########################################
 # Assign elements from classes to noise clusters
@@ -147,8 +143,6 @@ assign.noise.help <- function(class.elem, toassign){
   return(class.elem)
 }
 
-print("mem3")
-print(mem_used())
 
 #### Metric Helper Functions ####################################
 
@@ -212,8 +206,6 @@ get.ccm <- function(data,case=NULL){
   } 
   return(list(ccm.t=ccm.t, ccm.p=ccm.p))
 }
-print("mem4")
-print(mem_used())
 
 #### tp #################################################
 # Returns the number of True Positives for the given clustering 
@@ -271,8 +263,6 @@ tn <- function(data){
   tn <- total.neg - fn(data)
   return(tn)
 }
-print("mem5")
-print(mem_used())
 
 #### fn  ##################################################
 # Returns the number of False Negatives for the given clustering 
@@ -344,8 +334,6 @@ test.helper <- function(data){
   print(paste("Total should be:", n.elem^2))
 }
 
-print("mem6")
-print(mem_used())
 
 #### Data Output Helper Functions ###############################
 
@@ -384,8 +372,6 @@ get.param.str <- function(param.vals=NULL){
   return(str)
 }
 
-print("mem7")
-print(mem_used())
 
 #### SIMLUATION DEFINITION ####################################
 
@@ -495,8 +481,6 @@ se <- function(x){
   return(sd(x)/sqrt(length(x)))
 }
 
-print("mem8")
-print(mem_used())
 
 read.sim <- function(C.values = 4:5,
                     K.u.values=7:10,
@@ -543,8 +527,6 @@ read.sim <- function(C.values = 4:5,
   return(res)
 }
 
-print("mem9")
-print(mem_used())
 
 #### run.sim ####################################################
 # Run the simulation over the given parameter values
@@ -621,8 +603,6 @@ run.sim <- function(C.values = 4:5,
   return(res)
 }
 
-print("mem10")
-print(mem_used())
 
 run.sim.par <- function(C.values = 4:5,
                     K.u.values=7:10, 
@@ -696,7 +676,7 @@ run.sim.single <- function(C = 4,
                      data <- create.data(,C,,K.u,K.n,e1,e2)
                      print("size_data_orig")
                      print(object_size(data))
-                     eval <- evaluate(data)
+                     eval <- evaluate_all(data)
                      
                      }
                      print("...Complete")
@@ -733,8 +713,6 @@ run.sim.single <- function(C = 4,
 #  sim.res - vector with one entry for each defined clustering
 #     metric that contains the result of evaluating the clustering
 #     assignment using that metric
-print("mem12")
-print(mem_used())
 
 evaluate <- function(data, title=""){
   # calculate each of the desired metrics for the given simulation data
@@ -795,9 +773,71 @@ gc()
   return(sim.norm)
 }
 
+evaluate_all <- function(data, title=""){
+  # calculate each of the desired metrics for the given simulation data
+ # pv <- pseudo.v.metric(data,1e-50)# pseudoV and symmetric pseudoV measures
+  # sim.res <- c("Combinatorial.Equal.Weight" = combinatorial.metric(1,1,data), 
+  #              "Combinatorial.Unequal.Weight" = combinatorial.metric(2,1,data), 
+  #              "Pseudo.V" = 1 - (pv$normal / 4000), # scale these so that they can be compared to other metrics
+  #              "Pseudo.V.Sym" = 1 - (pv$sym / 4000),
+  #              "MCC" = mcc.metric(data),
+  #              "Pearson" = pearson.metric(data),
+  #              "Spearman" = spearman.metric(data),
+  #              "AUPR" = aupr.metric(data),
+  #              "2A.metric" = mean(1 - (pv$normal / 4000),pearson.metric(data), spearman.metric(data)),
+  #              "Sqrt" = sqrt.metric(data))
+  print("mem starting evaluate")
+  print(mem_used())
+  pv <- pseudo.v.metric(data,1e-50)# pseudoV and symmetric pseudoV measures
+  pv.all <- pseudo.v.metric(data,1e-50,case='all')
+  pv.each <- pseudo.v.metric(data,1e-50,case='each')
+gc()
+  print(mem_used())
+  sim.res <- c(
+              "Pseudo.V" = pv$normal,
+               "MCC" = mcc.metric(data),
+              # "Pearson" = pearson.metric(data),
+               "AUPR" = aupr.metric(data),
+               "SCC" = spearman.metric(data),
+               "SSE" = sse.metric(data)
+              )
+  gc()
+  print(mem_used())
+  sim.all <- c(
+              "Pseudo.V" = pv.all$normal,
+               "MCC" = mcc.metric(data,'all'),
+            #   "Pearson" = pearson.metric(data,'all'),
+               "AUPR" = aupr.metric(data,'all'),
+               "SCC" = spearman.metric(data,'all'),
+               "SSE" = sse.metric(data,'all')
+              )
+  gc()
+  sim.each <- c(
+              "Pseudo.V" = pv.each$normal,
+               "MCC" = mcc.metric(data,'each'),
+               # "Pearson" = pearson.metric(data,'each'),
+               "AUPR" = aupr.metric(data,'each'),
+               "SCC" = spearman.metric(data,"each"),
+               "SSE" = sse.metric(data,'each')
+              )
+  gc()
+  sim.norm <- sapply(seq_along(sim.res), function(x) {res = sim.res[x];
+                                                      all = sim.all[x];
+                                                      each = sim.each[x];
+                                                      if(names(res) %in% c("Pseudo.V","SSE")){
+                                                        return(1-(res/max(c(all,each))))
+                                                      } else{
+                                                        return((res-min(c(all,each)))/(1-min(c(all,each))))
+                                                      }
+                                                      })
+  sim.norm["2A_metric"] <-mean(sim.norm[c(1,2,2)])
+  if(title != ""){
+    sim.res <- c(c("Name" = title), sim.res)
+  }
+  return(sim.norm)
+}
+
 #### DATA OUTPUT/ANALYSIS ###################################
-print("mem13")
-print(mem_used())
 
 #### filter.data #############################################
 # Extract simulation data with the given parameter values 
@@ -870,8 +910,6 @@ filter.help <- function(res, value, param){
   return(res)
 }
 
-print("mem14")
-print(mem_used())
 
 #### parse.data ############################################
 # Parse simulation results to extract the data in a usable
@@ -1011,8 +1049,6 @@ parse.data.means <- function(res, params.fixed.values, param.interest, metrics=N
   
   return(res.means)
 }
-print("mem15")
-print(mem_used())
 #### parse.data.diff ##########################################
 # Parse simulation results to extract the data in a usable
 # form. Returns the difference between the metric scores for
@@ -1089,9 +1125,6 @@ test.properties <- function(prop=1, metric=NULL, ...){
   prob.satisfied <- prop.funcs[[prop]](metric = metric, ...)
   return(prob.satisfied)
 }
-
-print("mem16")
-print(mem_used())
 # Test property 1 - the metric score gets better as the number of
 #                 predicted clusters increases if the number of predicted
 #                 clusters is less than the true number of clusters
@@ -1269,10 +1302,10 @@ test.p2 <- function(metrics=NULL,
                                     '_e1=', e1, 
                                     '_e2=', e2, '.tsv', sep=""), header=T)
               print(c("Ku1",C,k.u.1,k.n,e1,e2))
-      #  print(d.1)
+       # print(d.1)
         print(c("Ku2",k.u.2))
-  #     print(d.2)
-     #   browser()
+      # print(d.2)
+       # browser()
         if(!is.null(metric)){ # look at only the metrics specified
                 d.1 <- d.1[,metric]
                 d.2 <- d.2[,metric]
@@ -1582,8 +1615,6 @@ test.p4 <- function(metrics=NULL,
   }
   return(res)
 }
-print("mem21")
-print(mem_used())
 # Test property 4 - the metric score gets worse as epsilon2 (the proportion of
 #             items assigned to an incorrect noise cluster) increases
 test.p4.old <- function(metric=NULL,
@@ -1674,7 +1705,7 @@ test.p4.old <- function(metric=NULL,
 #       otherwise plot the metric scores themselves  
 # OUTPUT:
 #    plot - plot of the given data
-plot.sim <- function(res, params.fixed.values,param.interest, metrics=NA, diff=FALSE, filename=NULL,print.legend=TRUE){
+plot.sim <- function(res, params.fixed.values,param.interest, metrics=NA, key.x=0.04, key.y=0.95, diff=FALSE, filename=NULL,print.legend=TRUE, limits=FALSE, lab=c("AUPR","Pearson/MCC","JS divergence","2A score")){
   # get the data for plotting
   if(diff){
     plot.data <- parse.data.diff(res, params.fixed.values, metrics)
@@ -1732,8 +1763,9 @@ plot.sim <- function(res, params.fixed.values,param.interest, metrics=NA, diff=F
   ymax <- max(plot.data[,2])
   yrange <- ymax - ymin
   print(paste(yrange, ymax, ymin))
-  if(yrange != 0){
-    ylim <- c(min(ymin, max(ymin - yrange/4, -0.1)), max(ymax,min(ymax + yrange/4, 1.1)))
+  if(limits==TRUE){
+   ylim = c(ymin-0.1,ymax+0.1)
+   # ylim <- c(min(ymin, max(ymin - yrange/4, -0.1)), max(ymax,min(ymax + yrange/4, 1.1)))
   } else {
     ylim = c(-0.1, 1.1)
   }
@@ -1763,20 +1795,22 @@ plot.sim <- function(res, params.fixed.values,param.interest, metrics=NA, diff=F
       border = 'transparent'
       )
   );
-  lab = gsub('\\.',' ', metrics)
+  # lab = gsub('\\.',' ', metrics)
+  print("key.y")
+  print(key.y)
   metric.key = list(
     text = list(
-      lab = c("AUPR","Pearson/MCC","JS divergence","2A score"),
+      lab = lab, 
       cex = 0.6,
       col = 'black'
       ),
     points = list(
       pch = p.pch,
-      col = p.colours[c(1,2,3,4)],
+      col = p.colours,
       cex = p.cex
       ),
-    x = 0.04,
-    y = 0.95,
+    x = key.x,
+    y = key.y,
     padding.text = 1
     )
 #   metric.legend.grob <- legend.grob(
@@ -1815,13 +1849,13 @@ plot.sim <- function(res, params.fixed.values,param.interest, metrics=NA, diff=F
   print(xat)
   print(plot.formula)
   if(print.legend == TRUE){
-    legend.print = list(inside = list(fun = draw.key, args = list(key=metric.key), x=0.5, y = 0.95))
+    legend.print = list(inside = list(fun = draw.key, args = list(key=metric.key), x=key.x, y = key.y))
   }
   plot.data[,1] <- factor(plot.data[,1], levels=sort(as.numeric(unique(plot.data[,1]))), labels = sort(as.numeric(unique(plot.data[,1]))))
   plot.data$metric <- as.factor(plot.data$metric)
   plot <- create.scatterplot(plot.formula, 
                      plot.data,
-               #      filename = filename,
+                    filename = filename,
                      groups = plot.data$metric,
                      pch = p.pch,
                      col = p.colours,
@@ -1830,7 +1864,13 @@ plot.sim <- function(res, params.fixed.values,param.interest, metrics=NA, diff=F
                      abline.h = c(0,1),
                      abline.col = 'grey',
                      xlab.label = label,
+                     top.padding=0,
+                     bottom.padding=0,
+                     left.padding=0,
+                     right.padding=0,
                      ylab.label = ylab,
+                     yaxis.tck=c(1,0),
+                     xaxis.tck=c(1,0),
                      xaxis.cex = 0.6,
                      yaxis.cex = 0.6,
                      xaxis.rot = xrot,
@@ -1845,7 +1885,7 @@ plot.sim <- function(res, params.fixed.values,param.interest, metrics=NA, diff=F
            #          main = title,
             #         main.cex = 1.5,
                      description = descrip,
-                     ylimits = c(0,1),
+                     ylimits = ylim,
                      );
   return(plot);
 }
@@ -2022,7 +2062,7 @@ plot.properties.scatter <- function(res.p1=NULL, res.p2=NULL, res.p3=NULL, res.p
 # OUTPUT:
 #     plot - plot of the proportion of simulation runs each metric 
 #       satisfies each property
-plot.properties.heatmap <- function(res.p1=NULL, res.p2=NULL, res.p3=NULL, res.p4=NULL,filename=NULL){
+plot.properties.heatmap <- function(res.p1=NULL, res.p2=NULL, res.p3=NULL, res.p4=NULL,filename=NULL, col='blue',textcol='grey90', yaxis.lab=c("JS divergence","Pearson/MCC","AUPR","2A score")){
   if(is.null(res.p1)){
     res.p1 <- test.p1()
   }
@@ -2059,20 +2099,20 @@ plot.properties.heatmap <- function(res.p1=NULL, res.p2=NULL, res.p3=NULL, res.p
   names(res.p4.avg) <- metrics
   
   res <- do.call(rbind, list(res.p1.avg,res.p2.avg,res.p3.avg,res.p4.avg))
-  rownames(res) <- paste('P', 1:4, sep='')
+  rownames(res) <- paste('P', 1:nrow(res), sep='')
   print(t(res))
   res <- t(res)
-  res <- res[rev(c(1:4)),]
+  # res <- res[rev(c(1:nrow(res))),]
   hm <- create.heatmap(
     x = res,
    # main='Proportion Runs that Satisfied Each Property',
     xaxis.lab = colnames(res),
     xaxis.rot = 0,
-    yaxis.lab = c("JS divergence","Pearson/MCC","AUPR","2A score"),
+    yaxis.lab = yaxis.lab,
     grid.row=T,
     grid.col=T,
     clustering='none',
-   # filename="~/test.png", #filename,
+   filename=filename,
     resolution=400,
     xaxis.cex =0.6,
     yaxis.cex =0.6,
@@ -2081,15 +2121,16 @@ plot.properties.heatmap <- function(res.p1=NULL, res.p2=NULL, res.p3=NULL, res.p
     colourkey.labels.at=c(0,1),
     colourkey.labels =c(0,1),
     colour.centering.value=0.5,
-    colour.scheme = c('white','blue'),
+    colour.scheme = c('white',col),
     colourkey.cex =0.6,
     text.cex = 0.6,
-    text.col= 'grey90',
+    text.fontface=2,
+    text.col= textcol,
     same.as.matrix=TRUE,
    # cell.text = sapply(as.numeric(res), function(x) ifelse(x==1,return(x),round(x,2))),
-    cell.text = sapply(c(rev(res.p1.avg),rev(res.p2.avg),rev(res.p3.avg),rev(res.p4.avg)), function(x) ifelse(x==1,return(x),round(x,2))),
-    col.pos = sapply(1:4,function(x) rep(x,4)),
-    row.pos =rep(c(1:4),4), 
+    cell.text = sapply(c(rev(res.p1.avg),rev(res.p2.avg),rev(res.p3.avg),rev(res.p4.avg)), function(x) ifelse(x==1,return(x),return(round(x,2)))),
+    col.pos = sapply(1:nrow(res),function(x) rep(x,nrow(res))),
+    row.pos =rep(c(1:nrow(res)),nrow(res)), 
     )
 #  print(hm)
   print(res)
@@ -2128,8 +2169,8 @@ pearson.metric <- function(data,case=NULL){
 #       elements of each class that are assigned to each cluster
 # OTUPUT:
 #   score - score for the clustering assignment, higher is worse
-spearman.metric <- function(data){
-  ccms <- get.ccm(data) # co-clustering matrices, both true and predicted
+spearman.metric <- function(data, case=NULL){
+  ccms <- get.ccm(data,case) # co-clustering matrices, both true and predicted
   ccm.t <- ccms$ccm.t
   ccm.p <- ccms$ccm.p
   
@@ -2330,5 +2371,16 @@ sqrt.metric <- function(data){
   n <- length(ccm.t)
   count <- (n^2 - n)
   sqrt <- 1 - (sum(abs(ccm.t - ccm.p)) / count)
+  return(sqrt)
+}
+
+sse.metric <- function(data,case=NULL){
+  ccms <- get.ccm(data,case) # co-clustering matrices, both true and predicted
+  ccm.t <- ccms$ccm.t
+  ccm.p <- ccms$ccm.p
+  
+  n <- length(ccm.t)
+  count <- (n^2 - n)
+  sqrt <- sum((ccm.t - ccm.p)^2) 
   return(sqrt)
 }
