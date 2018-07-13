@@ -150,7 +150,7 @@ def get_ad_nvar(scenario,  t_ad=None, size_clusters=100, nssms=None, prop_split=
         return ad
     elif scenario == "NClusterTwoLineages":
         ad = np.triu(np.ones(t_ad.shape), k=1)
-        ad[2:np.sum(size_clusters[0:3])+2,np.sum(size_clusters[0:3])+2:] = 0
+        ad[1:np.sum(size_clusters[0:3])+2,np.sum(size_clusters[0:3])+2:] = 0
         # ad[2:3*size_clusters+2,3*size_clusters+2:] = 0
         return ad
     elif scenario == "NClusterCorrectLineage":
@@ -292,7 +292,9 @@ def get_ad_nvar(scenario,  t_ad=None, size_clusters=100, nssms=None, prop_split=
     else:
         raise LookupError("Invalid scenario")
 # print("Truth")
-# # t=get_ad_nvar('Truth',size_clusters=[2,2,2,2,2,2])
+# t=get_ad_nvar('Truth',size_clusters=[3,2,3,3,2,2])
+# t=get_ad_nvar('Truth',size_clusters=[3,2,0,3])
+# print t
 # test_same('SplitClusterBotDiff',nssm=3)
 # test_same('SplitClusterBotSame',nssm=3)
 # test_same('SplitClusterMidMultiChild',nssm=3)
