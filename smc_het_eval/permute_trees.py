@@ -16,10 +16,10 @@ def tree_id(tree_df):
 def linear_4clust():
 	tree = Tree(name=1, size=3)
 	node2 = tree.create_node(2,tree.root,2)
-	node3 = tree.create_node(3,node2,3)	
-	node4 = tree.create_node(4,node3,3)	
-	node5 = tree.create_node(5,node4,3)	
-	node6 = tree.create_node(6,node5,3)	
+	# node3 = tree.create_node(3,node2,3)	
+	# node4 = tree.create_node(4,node3,3)	
+	# node5 = tree.create_node(5,node4,3)	
+	# node6 = tree.create_node(6,node5,3)	
 	return tree
 
 
@@ -83,12 +83,13 @@ def output_trees(tree_dict=None, print_trees=False, prefix=None):
 	for parents in tree_dict.values():
 		tree_df = np.vstack((clusters,parents))
 		tree_df = np.transpose(tree_df)
-
+		tree = tree_from_df(tree_df)
+		tree_mistakes(tree, prefix + "_"+str(i)+"_")	
 		if (print_trees == True):
 			outfile = prefix + "_" + str(i) + ".txt"
 			print outfile
 			print i
-			np.savetxt(outfile,tree_df, fmt='%1i')
+			np.savetxt(outfile,tree_df, fmt='%1i' ,delimiter="\t")
 		i += 1
 
 	return (tree_df)
@@ -102,7 +103,7 @@ def new_tree_mistakes(tree_dict, i):
 	tree_df = np.transpose(tree_df)
 	# print tree_df
 	tree = tree_from_df(tree_df)
-	tree_mistakes(tree)
+	tree_mistakes(tree, "unique_6clust_"+str(i)+"_")
 
 
 if __name__ == '__main__':
@@ -116,9 +117,9 @@ if __name__ == '__main__':
 	tree_dict[orig_tree_num] = orig_tree_df[:,1]
 	permute_tree(tree,tree_dict)
 	pprint.pprint(tree_dict)
-	# output_trees(tree_dict, print_trees= True, prefix="unique_6clust")
-	for i in range(3):
-		new_tree_mistakes(tree_dict,i)
+	output_trees(tree_dict, print_trees= True, prefix="unique_2clust")
+	# for i in range(6,7):
+	# 	new_tree_mistakes(tree_dict,i)
 
 	# print "branching truth"
 	# tree = branching_test5()

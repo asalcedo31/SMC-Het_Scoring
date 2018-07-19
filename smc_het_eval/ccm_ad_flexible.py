@@ -34,6 +34,7 @@ class Node:
 		if self.children is not None:
 			for child in children:
 				self.children = np.append(self.children,child)
+
 	def remove_child(self, child_names):
 		#child_names is a string or string list
 		#put single node names into a list 
@@ -214,8 +215,6 @@ class Tree:
 				tree_df['parent'][i] = node_names[tree_df['parent'][i]]
 
 
-		if outfile is not None:
-			tree_df.to_csv(outfile, header=None,index=None,sep="\t")
 		if (uniform == True and tier == True):
 			tree_df = tree_df.sort_values(by='plot_names')
 			print tree_df[['nodes','parent','plot_names', 'parent_names', 'tier']]
@@ -231,6 +230,12 @@ class Tree:
 		if plot_labels == True:
 			print tree_df[['nodes','parent','plot_names', 'parent_names']]
 		
+		if outfile is not None:
+			tree_df = tree_df.sort_values(by='plot_names')
+			tree_df = tree_df[['nodes','parent','plot_names']]
+			tree_df.to_csv(outfile, header=None,index=None,sep="\t")
+		
+
 		return tree_df.as_matrix(columns=['nodes','parent'])
 
 
@@ -261,12 +266,19 @@ class Tree:
 		new_node = self.create_node(new_name,parent=parent,values=node_idx[idx_split])
 
 	def merge_nodes(self, node_name1, node_name2):
+		#merge node2 into node1 and transfer all children
 		node1 = self.get_node(node_name1)
+		#fetch the node and its index in the tree array
 		node2, idx2 = self.get_node(node_name2, return_idx=True)
+		if node1.name == node2.name:
+			return
 		node1.value = np.concatenate((node1.value,node2.value))
-		node1.remove_child(node_name2)
+		# node1.remove_child(node_name2)
 		if len(node2.children) > 0 :
 			node1.add_children(node2.children)
+			for child in node2.children:
+				print child.name, child.parent.name
+				self.switch_parent(child.name, node_name1)
 		self.nodes = np.delete(self.nodes, idx2)
 
 	def collapse_node(self, node_name):
@@ -407,6 +419,7 @@ class Tree:
 
 	def switch_parent(self, node_name,new_parent_name):
 		node = self.get_node(node_name)
+		print node.name
 		new_parent_node = self.get_node(new_parent_name)
 		old_parent_node = self.get_node(node.parent.name)
 		
@@ -505,18 +518,19 @@ def tree_from_df(tree_df, size = None):
 	return(tree)
 
 
-def tree_mistakes(tree):
+def tree_mistakes(tree, base):
 	print "orig"
 	print tree.tree_struct()
-	# split_tree = split_bottom(tree)
-	# merged_bottom_tree = merge_bottom(tree)
-	# merged_top_tree = merge_top(tree)
-	# extra_bottom_tree = add_extra_bottom(tree)
-	# merged_extra_tree = merge_top_and_add_extra(tree)
-	switched_tree = parent_is_grandparent(tree)
-	# switched_tree = sibling_is_parent(tree)
+	split_tree = split_bottom(tree, base)
+	merged_bottom_tree = merge_bottom(tree,base)
+	merged_top_tree = merge_top(tree, base)
+	extra_bottom_tree = add_extra_bottom(tree, base)
+	merged_extra_tree = merge_top_and_add_extra(tree, base)
+	switched_tree = parent_is_grandparent(tree, base)
+	
+	# switched_tree = sibling_is_parent(tree, base)
 
-def split_bottom(tree):
+def split_bottom(tree, base):
 	tree_df = tree.tree_struct()
 	split_bottom_tree = copy.deepcopy(tree)
 	split_bottom_tree.split_node(max(tree_df[:,0]), max(tree_df[:,0])+1, same =False)
@@ -524,11 +538,11 @@ def split_bottom(tree):
 	split_node.plot_name = max(tree_df[:,0])
 	print "split"
 	print split_bottom_tree.tree_struct(plot_labels = True)
-	print "orig"
-	print tree.tree_struct()
+	outname = base + "split_bottom.txt"
+	print split_bottom_tree.tree_struct(plot_labels=True, outfile = outname )
 	return(split_bottom_tree)
 
-def merge_bottom(tree):
+def merge_bottom(tree,base):
 	tree_df = tree.tree_struct()
 	merged_bottom_tree = copy.deepcopy(tree)
 	bottom_siblings = tree_df[tree_df[:,1] == tree_df[np.argmax(tree_df[:,0]),1],:]
@@ -546,11 +560,12 @@ def merge_bottom(tree):
 	merged_node = merged_bottom_tree.get_node(node_1)
 	merged_node.plot_name = str(node_1) +'/' + str(node_2)
 	print merged_node.value
-		
 	print merged_bottom_tree.tree_struct(plot_labels = True)
+	outname = base + "merged_bottom.txt"	
+	print merged_bottom_tree.tree_struct(plot_labels=True, outfile = outname )
 	return(merged_bottom_tree)
 
-def merge_top(tree):
+def merge_top(tree, base=None):
 	tree_df = tree.tree_struct()
 	merged_top_tree = copy.deepcopy(tree)
 	node_1 = 1
@@ -560,54 +575,81 @@ def merge_top(tree):
 	merged_node = merged_top_tree.get_node(node_1)
 	merged_node.plot_name = str(node_1) +'/' + str(node_2)
 	print merged_node.value
-		
 	print merged_top_tree.tree_struct(plot_labels = True)
+	if (base is not None):
+		outname = base + "merged_top.txt"			
+		print merged_top_tree.tree_struct(plot_labels = True, outfile = outname)
 	return(merged_top_tree)
 
-def add_extra_bottom(tree):
+def add_extra_bottom(tree, base=None):
 	tree_df = tree.tree_struct()
 	parent_name = max(tree_df[:,0]) 
 	extra_bottom_tree = copy.deepcopy(tree)
 	extra_bottom_tree.extra_node(0.5,parent_name,all_nodes=True, num_nodes=None)
 	parent_node = extra_bottom_tree.get_node('Extra')
 	parent_node.plot_name = 'X'
-	print extra_bottom_tree.tree_struct(plot_labels=True)
+	print extra_bottom_tree.tree_struct(plot_labels = True)
+	if (base is not None):
+		outname = base + "extra_bottom.txt"	
+		print extra_bottom_tree.tree_struct(plot_labels=True, outfile = outname)
 	return extra_bottom_tree
 
-def merge_top_and_add_extra(tree):
+def merge_top_and_add_extra(tree, base):
 	merged_tree = merge_top(tree)
 	print tree.tree_struct()
 	extra_and_merged = add_extra_bottom(merged_tree)
+	outname = base + "extra_merged.txt"	
+	print extra_and_merged.tree_struct(plot_labels=True, outfile = outname)
+	return(extra_and_merged)		
 
-def parent_is_grandparent(tree):
+
+def parent_is_grandparent(tree, base):
 	tree_df = tree.tree_struct()
 	node_name = max(tree_df[:,0]) 
 	pig_tree = copy.deepcopy(tree)
 	node = pig_tree.get_node(node_name)
 	grandparent = node.parent.parent
+	if grandparent is None :
+		if (len(node.parent.children) >0 ):
+			sibling_is_parent(tree,base)
+			return
+		else:	
+			return
 	if( len(grandparent.children) > 1):
-		sibling_is_parent(tree)
+		sibling_is_parent(tree,base)
+		return
 	else:
 		pig_tree.switch_parent(node_name, grandparent.name)
 		print pig_tree.tree_struct(plot_labels = True)
+		outname = base + "pig.txt"	
+		print pig_tree.tree_struct(plot_labels=True, outfile = outname)
+		
 		return pig_tree
 
-def sibling_is_parent(tree):
+def sibling_is_parent(tree, base):
 	tree_df = tree.tree_struct()
+	print "orig",tree_df
 	node_name = max(tree_df[:,0])
 	sip_tree = copy.deepcopy(tree)
 	node = sip_tree.get_node(node_name)
+	print node.name
 	print node.parent.name
+	print len(node.parent.children)
 	if (len(node.parent.children) > 1):
-
+		#if the node has a direct sibling then make it its parent
 		sibling_name = tree_df[(tree_df[:,1] == node.parent.name) & (tree_df[:,0] != node_name),0]
 	else:
+		if node.parent.parent is None:
+			return
+		#if the node does not have a sibling 
 		print "here"
 		sibling_name = tree_df[(tree_df[:,1] == node.parent.parent.name) & (tree_df[:,0] != node.parent.name),0]
 		node_name = node.parent.name
 	print "sibling", sibling_name
 	sip_tree.switch_parent(node_name, sibling_name)		
 	print sip_tree.tree_struct(plot_labels = True)
+	outname = base + "sip.txt"	
+	print sip_tree.tree_struct(plot_labels=True, outfile = outname)
 	return sip_tree
 	
 def n_cluster_one_lineage(nssm, ordered =True):
