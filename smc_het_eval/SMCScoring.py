@@ -206,6 +206,14 @@ def calculate1C(pred, truth, err='abs'):
     scaled = calculate_scaled1C(pred, truth, err)
     return max(orig,scaled)
 
+def clonalFraction(pred, truth):
+    # PCAWG clonal fraction metric
+    pred = np.asarray(pred)
+    truth = np.asarray(truth)
+    pred_cf = pred[np.argmax(pred[:,1]),0]/np.sum(pred[:,0])
+    truth_cf = truth[np.argmax(truth[:,1]),0]/sum(truth[:,0])
+    cf_score = 1-max(0,(abs(pred_cf-truth_cf)/truth_cf))
+    return cf_score
 
 def validate2A(data, nssms, return_ccm=True, mask=None):
     # validate2A only fails input if..
@@ -1507,6 +1515,12 @@ challengeMapping = {
         'vcf_func' : parseVCF2and3,
         'filter_func' : filterFPs
     },
+    'cF': {
+        'val_funcs': [validate1C],
+        'vcf_func' : parseVCF1C,
+        'score_func': clonalFraction,
+        'filter_func': None
+    }
 }
 
 def verifyChallenge(challenge, predfiles, vcf):
