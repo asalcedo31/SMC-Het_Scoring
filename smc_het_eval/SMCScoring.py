@@ -109,6 +109,18 @@ def calculate1B(pred, truth, method='normalized'):
     else:
         raise KeyError('Invalid method for scoring SC 1B. Choose one of "orig" or "normalized".')
 
+def validate1C_lax(data, nssms, mask=None):
+    data = data.split('\n')
+    data = filter(None, data)
+    data = [x.strip() for x in data]
+    if len(data) < 1:
+        raise ValidationError("Number of lines is less than 1")
+    elif len(data) > 10:
+        raise ValidationError("Number of lines is greater than 10")
+
+    data2 = [x.split('\t') for x in data]
+    return zip([int(x[1]) for x in data2], [float(x[2]) for x in data2])
+
 def validate1C(data, nssms, mask=None):
     data = data.split('\n')
     data = filter(None, data)
@@ -210,9 +222,26 @@ def clonalFraction(pred, truth):
     # PCAWG clonal fraction metric
     pred = np.asarray(pred)
     truth = np.asarray(truth)
+    # pdb.set_trace()
+
+    # pred = pred[pred[:,1] >0 ,:]
+    # truth = truth[truth[:,1] >0 ,:]
+    print pred
+    print truth
     pred_cf = pred[np.argmax(pred[:,1]),0]/np.sum(pred[:,0])
-    truth_cf = truth[np.argmax(truth[:,1]),0]/sum(truth[:,0])
-    cf_score = 1-max(0,(abs(pred_cf-truth_cf)/truth_cf))
+    truth_cf = truth[np.argmax(truth[:,1]),0]/np.sum(truth[:,0])
+
+    print pred_cf, truth_cf
+    cf_score = max(0,1-(abs(pred_cf-truth_cf)/truth_cf))
+    return cf_score
+
+def clonalFractionSim(pred, truth):
+    # PCAWG clonal fraction metric
+    pred = np.asarray(pred)
+    truth = np.asarray(truth)
+    pred_cf = float(pred[np.where(pred[:,0]==1),1])/float(np.sum(pred[:,1]))
+    truth_cf = float(truth[np.where(truth[:,0]==1),1])/float(np.sum(truth[:,1]))
+    cf_score = max(0,1-(abs(pred_cf-truth_cf)/truth_cf))
     return cf_score
 
 def validate2A(data, nssms, return_ccm=True, mask=None):
@@ -982,7 +1011,9 @@ def calculate3Final(pred_ccm, pred_ad, truth_ccm, truth_ad, method="js_divergenc
         worst_score = min(one_score, n_score)
       #  print "aupr or mcc: ", set_to_zero((( (score - worst_score)/ (1-worst_score))+1)/2)
         return [score, one_score, n_score, set_to_zero((( (score - worst_score)/ (1-worst_score))+1)/2)]
+        # return  set_to_zero((( (score - worst_score)/ (1-worst_score))+1)/2)
     else:
+        # return set_to_zero(((1 - (score / max(one_score, n_score)))+1)/2)
         return [score, one_score, n_score, set_to_zero(((1 - (score / max(one_score, n_score)))+1)/2)]
 
 def makeCMatrix(*matrices):
@@ -1490,6 +1521,12 @@ challengeMapping = {
         'vcf_func' : parseVCF1C,
         'filter_func' : None
     },
+    '1C_alt' : {
+        'val_funcs' : [validate1C_lax],
+        'score_func' : calculate_scaled1C,
+        'vcf_func' : parseVCF1C,
+        'filter_func' : None
+    },
     # According to Quaid, there is no need to filter false positves with the new method developed for scoring subchallenge 2A
     '2A' : {
         'val_funcs' : [om_validate2A],
@@ -1516,7 +1553,7 @@ challengeMapping = {
         'filter_func' : filterFPs
     },
     'cF': {
-        'val_funcs': [validate1C],
+        'val_funcs': [validate1C_lax],
         'vcf_func' : parseVCF1C,
         'score_func': clonalFraction,
         'filter_func': None
