@@ -88,44 +88,26 @@ def permute_tree(tree, tree_dict):
 	for i in range(len(tree.nodes),1,-1):
 		#start with the bottom most node
 		node = tree.get_node(i)
-		# print "i", i, "node", node.name
 	
 		#recurse through the nodes above it
 		for j in range(1,i):
 
-			# print "j",j
 			#quickly check if the tree you get after switching nodes has been seen before
 			new_parent = tree.get_node(j)
 			new_tree = tree_array
 			new_tree[i-1,1] = j
 			new_tree_id = tree_id(new_tree)
 			#if the proposed parent only has at most one child and the tree is new then make ti
-			
-			
 			if( len(new_parent.children) < 2 and new_tree_id not in tree_dict):
-				# print "orig"
-				# print tree.tree_struct(plot_labels=True)
-	
-
 				tree.switch_parent(i,j)
-				# print"orig"
-				# print tree.tree_struct()
 				tree.standard_node_naming()
 				tree_df = tree.tree_struct(plot_labels=True,uniform=True)
 
 				#give the tree a unique identifier and store in dict
 				tree_num = tree_id(tree_df)
 				
-
 				# if the tree is new add it to the dict and recurse
 				if tree_num not in tree_dict:
-					# if ( tree_num==11334):
-					# 	pdb.set_trace()
-					# 	tree.standard_node_naming()
-				
-					# print "new tree ", i, j 
-					# print tree.tree_struct(plot_labels=True, uniform = True, tier=True)				
-					# print "tree id", tree_num, "tiers", tree.tiers
 					tree_dict[tree_num] = tree_df[:,1]
 					permute_tree(tree,tree_dict)
 

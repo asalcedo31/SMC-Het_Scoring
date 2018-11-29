@@ -146,7 +146,6 @@ class Tree:
 			#psuedo-2A output
 			np.savetxt(outfile, out2A, fmt='%i')
 		ccm = np.dot(out,out.T)
-
 		return ccm
 
 	def ad(self):
@@ -180,7 +179,10 @@ class Tree:
 			string_nodes = nodes_df[nodes_df['nodes'].str.contains(r'[a-zA-Z]')]
 			# str_idx = string_nodes.index()
 			node_names = dict()
-			max_int = int(max(int_nodes['nodes']))
+			if(len(int_nodes['nodes'])>0):
+				max_int = int(max(int_nodes['nodes']))
+			else:
+				max_int = 0
 			j = 1
 			for i in string_nodes.index:
 				node = string_nodes['nodes'][i]
@@ -682,7 +684,6 @@ def tree_from_df(tree_df, sizes = None):
 		nodes[tree_df[i,0]] = node
 	return(tree)
 
-
 def tree_mistakes(tree, base):
 	print "orig"
 	print tree.tree_struct()
@@ -822,15 +823,18 @@ def parent_is_grandparent(tree, base):
 	pig_tree = copy.deepcopy(tree)
 	node = pig_tree.get_node(node_name)
 	grandparent = node.parent.parent
+	print "parent is grandparent" 
 	if grandparent is None :
 		if (len(node.parent.children) >0 ):
-			sibling_is_parent(tree,base)
-			return
+			print "going to sibling is parent"
+			
+			return sibling_is_parent(tree,base)
 		else:	
-			return
+			return None
 	if( len(grandparent.children) > 1):
-		sibling_is_parent(tree,base)
-		return
+		print "going to sibling is parent"
+		# sibling_is_parent(tree,base)
+		return sibling_is_parent(tree,base)
 	else:
 		pig_tree.switch_parent(node_name, grandparent.name)
 		print pig_tree.tree_struct(plot_labels = True)
@@ -888,12 +892,37 @@ def sibling_is_parent(tree, base):
 	out1Cname= base+"sip_1C.txt"
 	out2Aname= base+"sip_2A.txt"
 	sip_tree.out_1C(out1Cname)
-	sip_tree.ccm(out2Aname)
-	
-	print sip_tree.tree_struct(plot_labels=True, outfile = outname)
-	
+	sip_tree.ccm(out2Aname)	
+	print sip_tree.tree_struct(plot_labels=True, outfile = outname)	
 	return sip_tree
+
+def one_cluster_full(tree, ordered =True):
+		nssm = tree.comp_nssms()
+		out_tree = Tree(name ='N0', size = nssm)
+		return out_tree
 	
+
+mistake_dict ={
+	'split_bottom': split_bottom, 
+	'merge_bottom' : merge_bottom,
+	'merge_top' : merge_top,
+	'extra_intermediate': add_intermediate_extra_bottom,
+	'merged_extra' : merge_top_and_add_extra,
+	'wrong_parent': parent_is_grandparent,
+	'linear' : linearize,
+	'extra_bottom': add_extra_bottom,
+	'all_1clust': one_cluster_full
+}
+
+def run_scenario(tree,sc,base):
+	print sc
+	if(sc != 'Truth'):
+		func = mistake_dict[sc]
+		mistake_tree = func(tree,base)
+		return mistake_tree
+	else:
+		return tree
+
 def n_cluster_one_lineage(nssm, ordered =True):
 	if ordered == True:
 		tree = Tree(name ='N0', size =1)

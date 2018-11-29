@@ -1,7 +1,10 @@
+
 from SMCScoring import *
 #from make_ccm import *
 #from make_ad_nvar import *
 #from memory_profiler import profile
+from permute_trees import *
+from ccm_ad_flexible import *
 import multiprocessing as mp
 import numpy as np
 import csv
@@ -234,6 +237,125 @@ def m_cont(t_m, m, ad=False):
     
     return m
 
+def make_permuted_trees(tree_func, prefix):
+    tree = tree_func()
+    tree_dict = dict()
+    permute_tree(tree,tree_dict)
+    clusters = np.arange(len(tree[:,1])+1)
+    prefix =  prefix + str(len(clusters)) + "clust"
+    tree_dict_i = dict()
+    i = 0
+    for key in tree_dict.keys():
+        tree_dict_i[prefix + "_" + str(i)] = tree_dict[key]
+        i += 1
+    return tree_dict_i
+
+def read_permuted_trees(prefix,n):
+    tree_dict = dict()
+    for i in range(n+1):
+        file = prefix+str(i)+'.txt'
+        file_1C = prefix+str(i)+'_1C.txt'
+        tree = np.loadtxt(file,dtype='i4')
+        sizes = np.loadtxt(file_1C,dtype='i4')
+        if len(tree.shape) > 1:
+            tree_arrays = np.vstack((tree[:,1], sizes[:,1]))
+            tree_dict[prefix +  str(i)] = np.transpose(tree_arrays)
+        else:
+            tree_dict[prefix +  str(i)] = np.hstack((np.asarray([tree[1]]),np.asarray([sizes[1]])))
+
+    return tree_dict
+
+
+def score_permutations(new=True, methods= ['js_divergence','pearson','mcc','aupr'], scenarios=['Truth','split_bottom','merge_bottom','merge_top','extra_intermediate','merged_extra','wrong_parent','linear', 'all_1clust']):
+    if new is True:
+   #     trees = [ linear_2clust, linear_3clust, linear_4clust, linear_5clust, linear_6clust]
+        trees = [linear_2clust]
+        prefix = 'tree_'
+        tree_dict_list = [make_permuted_trees(tree, prefix) for tree in trees]
+    else:
+
+        # nclust = [(5,2)]
+        # nclust = [(1,0),(2,0),(3,1),(4,2),(5,5),(6,10)]
+        nclust = [(3,2),(4,2)]
+        # nclust = [(2,0),(3,1),(4,2),(5,5),(6,9)]
+        tree_dict_list = []
+        for i in range(len(nclust)):
+            # prefix = "unique_" + str(nclust[i][0])+"clust_"
+            prefix = "unique_" + str(nclust[i][0])+"clust_ssm_"
+            tree_dict_list.append(read_permuted_trees(prefix,nclust[i][1]))
+    out = pd.DataFrame(columns = ['tree','mistake','sc','js_divergence','pearson','mcc','aupr'])
+    out_cF = pd.DataFrame(columns = ['tree','mistake','sc','clonal_fraction'])
+    # out = np.zeros((1,1))
+    for i_tree in range(len(tree_dict_list)):
+        tree_dict = tree_dict_list[i_tree]
+        print tree_dict
+        print len(tree_dict[tree_dict.keys()[0]].shape) 
+        if len(tree_dict[tree_dict.keys()[0]].shape) > 1:
+            clusters = np.arange(len(tree_dict.values()[0]))+1
+            mistakes = scenarios
+        else:
+            clusters = np.asarray([1])
+            mistakes = ['Truth','split_bottom','extra_bottom']
+        print clusters
+        for key in tree_dict.keys():
+            print tree_dict[key].shape
+            if len(tree_dict[key].shape) > 1:
+                parents = tree_dict[key][:,0]
+                sizes = tree_dict[key][:,1]
+            else:
+                parents = np.asarray([tree_dict[key][0]])
+                sizes = np.asarray([tree_dict[key][1]])
+            tree_df = np.vstack((clusters,parents))
+            tree_df = np.transpose(tree_df)
+            print tree_df
+            tree = tree_from_df(tree_df, sizes=sizes)
+            print tree.out_1C()
+            tree.tree_struct()
+            t_ccm = tree.ccm()
+            t_ad = tree.ad()
+            t_1C = tree.out_1C()
+
+            for scenario in mistakes:
+                mistake_tree = run_scenario(tree, scenario, prefix + "_"+str(i)+"_")
+                if mistake_tree is None:
+                    continue
+                ccm = mistake_tree.ccm()
+                ad = mistake_tree.ad()
+                p_1C = mistake_tree.out_1C()
+                print scenario
+                print "shpe",ccm.shape
+                ccm_B = copy.deepcopy(ccm)
+                ad_B = copy.deepcopy(ad)
+                ccm_B = m_cont(t_ccm, ccm_B)
+                ad_B = ad_cont(t_ad, ad_B, ccm_B)
+                score2A =  [calculate2(ccm, t_ccm, method=method) for method in methods]
+                score3A =  [calculate3Final(ccm, ad, t_ccm, t_ad, method=method)[3] for method in methods]
+
+                score2B =  [calculate2(ccm_B, t_ccm, method=method) for method in methods]
+                score3B =  [calculate3Final(ccm_B, ad_B, t_ccm, t_ad, method=method)[3] for method in methods]
+
+                score_cF = clonalFractionSim(p_1C,t_1C)
+
+                score2A = map(lambda x: 0 if np.isnan(x) else x , score2A)
+                score2B = map(lambda x: 0 if np.isnan(x) or np.isinf(x) else x , score2A)
+                score3A = map(lambda x: 0 if np.isnan(x) else x , score3A)
+
+                print '3A',score3A
+                print '2A',score2A
+                print '3B',score3B
+                print '2B',score2B
+                out = out.append({'tree': key, 'mistake':scenario,'sc':'3A','js_divergence':score3A[0], 'pearson':score3A[1], 'mcc':score3A[2], 'aupr':score3A[3]},ignore_index=True)
+                out = out.append({'tree': key, 'mistake':scenario,'sc':'2A','js_divergence':score2A[0], 'pearson':score2A[1], 'mcc':score2A[2], 'aupr':score3A[3]},ignore_index=True)
+                out = out.append({'tree': key, 'mistake':scenario,'sc':'3B','js_divergence':score3B[0], 'pearson':score3B[1], 'mcc':score3B[2], 'aupr':score3B[3]},ignore_index=True)
+                out = out.append({'tree': key, 'mistake':scenario,'sc':'2B','js_divergence':score2B[0], 'pearson':score2B[1], 'mcc':score2B[2], 'aupr':score3B[3]},ignore_index=True)
+                
+                out_cF = out_cF.append({'tree': key, 'mistake':scenario,'sc':'cF','clonal_fraction': score_cF}, ignore_index=True)
+               
+    out.to_csv('permuted_tree_scores_ssm.txt',index=None,sep="\t")
+    out_cF.to_csv('permuted_tree_scores_ssm_cF.txt',index=None,sep="\t")
+
+
+    
 def scoring2A_behavior_var(methods='js_divergence', scenarios = ["SplitClusterBot", "MergeClusterBot", "OneCluster", "NCluster", "SmallExtra", "BigExtra"], verbose=False,n_ssm=600,n_clusters=6,in_big_extra_prop=0.1,in_small_extra_prop=0.025,write=True,rep=100,in_prop_split=0.5, set_prop = None, p_err=0.1, nvar=True, continuous=False):
     '''Test the scoring behaviour of different metrics for evaluating Sub-Challenge 2, under various conditions.
 
@@ -251,8 +373,6 @@ def scoring2A_behavior_var(methods='js_divergence', scenarios = ["SplitClusterBo
     # True CCM:
 
      
-  #  scenarios = [ "OneCluster", "NCluster", "SmallExtra", "BigExtra","SplitClusterMidMultiChild", "SplitClusterMidOneChild", "SplitClusterBot",
-   #             "MergeClusterTop&Mid", "MergeClusterMid&BotMultiChild", "MergeClusterMid&BotOneChild","MergeClusterBot"]# mistake scenarios to be tested
     res = []
     f = open(tsv_dir + 'scoring2A_cases_params'+ '_nc'+ str(n_clusters) +'_s'+ str(n_ssm) + '_bep'+str(in_big_extra_prop)+'_sep'+str(in_small_extra_prop)+ '.tsv', 'w')
     for i in range(rep):
@@ -618,12 +738,6 @@ def scoring3A_behavior_var(methods='js_divergence', in_scenarios = None, verbose
     else:
         scenario_set = in_scenarios
     print'For scenarios', scenario_set
-    #big_extra_num = 33 # number of mutations to add in the BigExtra case
-    # True CCM:
-
-     
-  #  scenarios = [ "OneCluster", "NCluster", "SmallExtra", "BigExtra","SplitClusterMidMultiChild", "SplitClusterMidOneChild", "SplitClusterBot",
-   #             "MergeClusterTop&Mid", "MergeClusterMid&BotMultiChild", "MergeClusterMid&BotOneChild","MergeClusterBot"]# mistake scenarios to be tested
     res3A = []
     res2A = []
     f = open(tsv_dir + 'scoring3A_cases_params'+ '_nc'+ str(n_clusters) +'_rep' + str(rep) +'_s'+ str(n_ssm) + '_bep'+str(in_big_extra_prop)+'_sep'+str(in_small_extra_prop)+ '.tsv', 'w')
@@ -696,6 +810,7 @@ def score_sc(t_ccm, t_ad, t_clusters, sc, methods, size_clusters, n_ssm, i, in_s
         score3A =  [calculate3Final(ccm, ad, t_ccm, t_ad, method=method)[3] for method in methods]
         score3A = map(lambda x: 0 if np.isnan(x) else x , score3A)
 
+        #make into the 2A output
         t_2A = collapse_clusters_2A(t_clusters)
         p_2A = collapse_clusters_2A(clusters)
         muts = range(n_ssm)
@@ -711,8 +826,6 @@ def score_sc(t_ccm, t_ad, t_clusters, sc, methods, size_clusters, n_ssm, i, in_s
         score2A = map(lambda x: 0 if np.isnan(x) else x , score2A)
 
         out3A = np.array((sc_orig,i,'3A',score3A),dtype=np.dtype([('sc','S40'),('rep','int'),('chal','S40'),('scores', str(len(methods))+'float32')]))
-           #res3A.append(out3A)
-
         out2A = np.array((sc_orig,i,'2A',score2A),dtype=np.dtype([('sc','S40'),('rep','int'),('chal','S40'),('scores', str(len(methods))+'float32')]))
         out = np.vstack((out2A,out3A))
         return (out)
@@ -1568,9 +1681,9 @@ if __name__ == '__main__':
 
   #  print 'Scoring 3A Behavior using multiple metrics with different weights...'
     #run_2A_3A(methods=["js_divergence", "mcc", "aupr"], rep=1, n_ssm=1200, in_small_extra_prop=0.02, in_big_extra_prop=0.15, rand=True)
-    np.random.seed(28)
+  #  np.random.seed(28)
     #run_2A_3A(methods=["js_divergence", "mcc", "aupr", "pearson"], rep=25, n_ssm=1200, in_small_extra_prop=0.05, in_big_extra_prop=0.15, rand=False, continuous=True)
-    out = scoring3A_behavior_var(methods=["js_divergence","mcc", "aupr", "pearson"], in_scenarios=[ 'OneCluster','NClusterOneLineage'], rep=1, n_ssm=12, in_small_extra_prop=0.05, in_big_extra_prop=0.15, continuous=True)
+ #   out = scoring3A_behavior_var(methods=["js_divergence","mcc", "aupr", "pearson"], in_scenarios=[ 'OneCluster','NClusterOneLineage'], rep=1, n_ssm=12, in_small_extra_prop=0.05, in_big_extra_prop=0.15, continuous=True)
   # #  behaviour_2A_split(n_ssms=1000)
   # # #  behaviour_2A_merged(n_ssms=1000)
     # if sys.argv[1] == 'extra':
@@ -1607,3 +1720,4 @@ if __name__ == '__main__':
     # print test
     # test_out = collapse_clusters_2A(test)
     # print(test_out)
+    score_permutations(new=False)
