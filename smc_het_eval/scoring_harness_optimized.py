@@ -111,7 +111,8 @@ def om_calculate2A(om, full_matrix=True, method='default', add_pseudo=True, pseu
         worst_scores = []
 
         # pearson and mcc give the same score for 2A
-        functions = ['js_divergence','mcc','mcc']
+        functions = ['js_divergence','aupr']
+        # functions = ['js_divergence','mcc','mcc']
 
         for m in functions:
           #  print("m", m, func_dict[m])
