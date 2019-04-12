@@ -10,6 +10,7 @@ from functools import reduce
 from scoring_harness_optimized import *
 from permutations import *
 import gc
+import pprint as pprint
 import traceback
 import pdb
 
@@ -24,12 +25,12 @@ err_msgs = []
 
 #from metric.py import*
 
-INFO            = False
+INFO            = True
 TIME            = False
 MEM             = False
 FINAL_MEM       = False
 WRITE_2B_FILES  = False
-WRITE_3B_FILES  = False
+WRITE_3A_FILES  = False
 
 class ValidationError(Exception):
     def __init__(self, value):
@@ -109,7 +110,7 @@ def calculate1B(pred, truth, method='normalized'):
     else:
         raise KeyError('Invalid method for scoring SC 1B. Choose one of "orig" or "normalized".')
 
-def validate1C_lax(data, nssms, mask=None):
+def validate1C_lax(data):
     data = data.split('\n')
     data = filter(None, data)
     data = [x.strip() for x in data]
@@ -222,17 +223,23 @@ def clonalFraction(pred, truth):
     # PCAWG clonal fraction metric
     pred = np.asarray(pred)
     truth = np.asarray(truth)
-    # pdb.set_trace()
 
-    # pred = pred[pred[:,1] >0 ,:]
-    # truth = truth[truth[:,1] >0 ,:]
-    print pred
-    print truth
-    pred_cf = pred[np.argmax(pred[:,1]),0]/np.sum(pred[:,0])
-    truth_cf = truth[np.argmax(truth[:,1]),0]/np.sum(truth[:,0])
+    pred_cf = float(pred[np.argmax(pred[:,1]),0])/float(np.sum(pred[:,0]))
+    truth_cf = float(truth[np.argmax(truth[:,1]),0])/float(np.sum(truth[:,0]))
 
     print pred_cf, truth_cf
     cf_score = max(0,1-(abs(pred_cf-truth_cf)/truth_cf))
+    return cf_score
+
+def clonalFraction3(pred,truth):
+    print "Calculating clonal fraction"
+    pred_cf = float(sum(np.all(pred == 0,0)))/float(pred.shape[0])
+    truth_cf = float(sum(np.all(truth == 0,0)))/float(truth.shape[0])
+    print pred_cf, truth_cf
+    print sum(np.all(pred == 0,0)), pred.shape[0]
+    print sum(np.all(truth == 0,0)), truth.shape[0]
+    cf_score = max(0,1-(abs(pred_cf-truth_cf)/truth_cf))
+    print cf_score
     return cf_score
 
 def clonalFractionSim(pred, truth):
@@ -394,7 +401,8 @@ def calculate2(pred, truth, full_matrix=True, method='default', pseudo_counts=No
         scores = []
         worst_scores = []
 
-        functions = ['js_divergence', 'pearson', 'mcc']
+        functions = ['js_divergence', 'aupr']
+        # functions = ['js_divergence', 'pearson', 'mcc']
         # functions = ['pseudoV']
         # functions = ['pearson']
         # functions = ['mcc']
@@ -832,14 +840,16 @@ def calculate2_mcc(pred, truth, full_matrix=True, rnd=1e-50):
 #### SUBCHALLENGE 3 #########################################################################################
 
 def validate3A(data, cas, nssms, mask=None):
+    # pdb.set_trace()
     # why do we even do a validate2A if we're basically just re-assembling the 2A file..
+    printInfo("validating 3A input")
     predK = cas.shape[1]
     cluster_assignments = np.argmax(cas, 1) + 1
 
     data = data.split('\n')
     data = filter(None, data)
     if len(data) != predK:
-        raise ValidationError("Input file contains a different number of lines (%d) than expected (%d)" % (len(data),predK))
+        raise ValidationError("Input file 3A contains a different number of lines (%d) than expected (%d)" % (len(data),predK))
     data = [x.split('\t') for x in data]
     for i in range(len(data)):
         if len(data[i]) != 2:
@@ -850,6 +860,7 @@ def validate3A(data, cas, nssms, mask=None):
         except ValueError:
             raise ValidationError("Entry in line %d could not be cast as integer" % (i+1))
 
+
     if [x[0] for x in data] != range(1, predK+1):
         raise ValidationError("First column must have %d entries in ascending order starting with 1" % predK)
 
@@ -859,10 +870,13 @@ def validate3A(data, cas, nssms, mask=None):
 
     # Form descendant of dict.  Each entry, keyed by cluster number, consists of a list of nodes that are decendents of the key.
     descendant_of = dict()
+    parents = set()
+
     for i in range(predK+1):
         descendant_of[i] = []
     for child, parent in data:
         descendant_of[parent] += [child] + descendant_of[child]
+        parents.add(parent)
         # gps (grandparents) are the list of nodes that are ancestors of the immediate parent
         gps = [x for x in descendant_of.keys() if parent in descendant_of[x]]
         for gp in gps:
@@ -875,11 +889,17 @@ def validate3A(data, cas, nssms, mask=None):
                               (data, descendant_of))
 
     # Form AD matrix
-
+    printInfo("Building AD matrix")
+    pprint.pprint(parents)
     n = len(cluster_assignments)
     # can use int8 because only 0 and 1 integers
     ad = np.zeros((n, n), dtype=np.int8)
     for i in range(n):
+        if( i % 5000 == 0):
+            printInfo("row ",i)
+        if cluster_assignments[i] not in parents:
+            # print "skipping ", i
+            continue
         for j in range(n):
             if cluster_assignments[j] in descendant_of[cluster_assignments[i]]:
                 ad[i, j] = 1
@@ -981,7 +1001,6 @@ def calculate3Final(pred_ccm, pred_ad, truth_ccm, truth_ad, method="js_divergenc
     }
     f = func_dict.get(method, None)
     #f = method
-  #  pdb.set_trace()
     t_all = make_all(truth_ccm,truth_ad)
     pred_all = make_all(pred_ccm, pred_ad, print_cous=True)
     score = f(pred_all,t_all)
@@ -1010,11 +1029,11 @@ def calculate3Final(pred_ccm, pred_ad, truth_ccm, truth_ad, method="js_divergenc
     if method in ['aupr','mcc','pearson']:  
         worst_score = min(one_score, n_score)
       #  print "aupr or mcc: ", set_to_zero((( (score - worst_score)/ (1-worst_score))+1)/2)
-        return [score, one_score, n_score, set_to_zero((( (score - worst_score)/ (1-worst_score))+1)/2)]
-        # return  set_to_zero((( (score - worst_score)/ (1-worst_score))+1)/2)
+        # return [score, one_score, n_score, set_to_zero((( (score - worst_score)/ (1-worst_score))+1)/2)]
+        return  set_to_zero((( (score - worst_score)/ (1-worst_score))+1)/2)
     else:
-        # return set_to_zero(((1 - (score / max(one_score, n_score)))+1)/2)
-        return [score, one_score, n_score, set_to_zero(((1 - (score / max(one_score, n_score)))+1)/2)]
+        return set_to_zero(((1 - (score / max(one_score, n_score)))+1)/2)
+        # return [score, one_score, n_score, set_to_zero(((1 - (score / max(one_score, n_score)))+1)/2)]
 
 def makeCMatrix(*matrices):
     # perform (1 - *matrices) without loading all the matrices into memory
@@ -1244,6 +1263,45 @@ def parseVCF2and3(data, sample_mask=None):
     # ]
     return [[vcf_lines], [true_lines], mask]
 
+def readPredVcf(pred,vcf):
+    printInfo("reading in VCFs")
+    p = open(pred)
+    v = open(vcf)
+
+    data = p.read()
+    data = data.split('\n')
+    data = [x for x in data if x != '']
+    data = [x for x in data if x[0] != '#']
+
+    p_sites = {}
+    for x in data:
+        p_sites[str(x.split('\t')[0])+"_"+ str(x.split('\t')[1])] = 1 
+
+    pred_idx = []
+    true_idx = []
+    
+    i = 0
+    for vcf_data in v:
+        
+        if (vcf_data == '' or vcf_data[0] == '#' ):
+            # i+=1
+            continue
+
+        vcf_data = vcf_data.rstrip("\n")
+        vcf_data = vcf_data.split('\t')
+        vcf_site = str(vcf_data[0])+"_"+ str(vcf_data[1])
+        if vcf_site in p_sites and vcf_data[len(vcf_data)-1] == "True":
+            pred_idx.append(i)
+
+        if vcf_data[len(vcf_data)-1] =="True":
+            true_idx.append(i)
+        i+=1
+    v.close()
+    print len(pred_idx)
+    print len(true_idx)
+    # return
+    return pred_idx, true_idx
+
 def filterFPs(x, mask):
     # EVERYTHING is done in memory
     #   1 - the elements at the indicies specified by mask are "picked" and assembled into a matrix
@@ -1296,9 +1354,9 @@ def add_pseudo_counts(ccm, ad=None, num=None):
     old_n = ccm.shape[0]
 
     if num is None:
-        num = np.floor(np.sqrt(old_n))
+        num = int(np.floor(np.sqrt(old_n)))
     elif num == 0:
-        return ccm, ad
+        return [ccm, ad]
 
     # EVERYTHING is done in memory
     #   The matrix is extended from nxn to mxm where { m = n + sqrt(n) }
@@ -1331,13 +1389,14 @@ def add_pseudo_counts(ccm, ad=None, num=None):
     # didn't optimize this. YET
     # either way, it should be cheap to do, i think all ad's are int8 matrices..
     if ad is not None:
+        # pdb.set_trace()
         new_ad = np.zeros([old_n + num] * 2)
         new_ad[:old_n, :old_n] = np.copy(ad)
         new_ad[(old_n+num/2):(old_n+3*num/4), :(old_n)] = 1 # one quarter of the pseudo counts are ancestors of (almost) every other cluster
         new_ad[:(old_n), (old_n+3*num/4):(old_n+num)] = 1 # one quarter of the pseudo counts are descendants of (almost) every other cluster
         ad = new_ad                                         # half of the pseudo counts are cousins to all other clusters
         return ccm, ad
-
+    # print ccm.shape
     return ccm
 
 
@@ -1414,6 +1473,11 @@ def verify(filename, role, func, *args, **kwargs):
             verified = func(filename,*args, **kwargs)
         elif is_gzip(filename): #pass compressed files directly to 2B or 3B validate functions
             verified = func(filename, *args, **kwargs)
+        elif func.__name__ in ['validate1C_lax']:
+             f = open(filename)
+             data = f.read()
+             f.close()
+             verified = func(data)
         #if is_gzip(filename):
         #    verified = func(filename, *args, **kwargs)
         else:
@@ -1583,13 +1647,16 @@ def verifyChallenge(challenge, predfiles, vcf):
     return "Valid"
 
  
-def scoreChallenge(challenge, predfiles, truthfiles, vcf, method='js_divergence', sample_fraction=1.0, rnd=1e-50):
-    
-    
+def scoreChallenge(challenge, predfiles, truthfiles, vcf, predvcf=None, method='js_divergence', sample_fraction=1.0, rnd=1e-50):
     
     #global err_msgs
     mem('START %s' % challenge)
     masks = makeMasks(vcf, sample_fraction) if sample_fraction != 1.0 else { 'samples' : None, 'truths' : None}
+
+    if predvcf is not None and challenge in ['3A']:
+        challengeMapping[challenge]['val_funcs'].pop()
+        predfiles.pop()
+        truthfiles.pop()
 
     if challengeMapping[challenge]['vcf_func']:
         nssms = verify(vcf, "input VCF", challengeMapping[challenge]['vcf_func'], sample_mask=masks['samples'])
@@ -1612,8 +1679,12 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, method='js_divergence'
 
     tout = []
     pout = []
-    tpout = []
+    tpout = [] 
+    pred_1C = ''
+    truth_1C = ''
+
     for predfile, truthfile, valfunc in zip(predfiles, truthfiles, challengeMapping[challenge]['val_funcs']):
+        printInfo(predfile, truthfile, valfunc)
         if is_gzip(truthfile) and challenge not in ['2B', '3B']:
             err_msgs.append('Incorrect format, must input a text file for challenge %s' % challenge)
             return "NA"
@@ -1665,10 +1736,11 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, method='js_divergence'
             tout.append(vout_with_pseudo_counts)
             mem('APC TRUTH %s' % truthfile)
         else:
+            printInfo("Verifying truth")
             tout.append(verify(truthfile, "truth file for Challenge %s" % (challenge), valfunc, *targs, mask=masks['truths']))
             mem('VERIFY TRUTH %s' % truthfile)
         
-        if challenge in ['2B', '3B']:
+        if challenge in ['2B']:
             printInfo('FINAL TRUTH DIMENSIONS -> ', tout[-1].shape)
 
         # starts reading in predfile here
@@ -1679,7 +1751,7 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, method='js_divergence'
         # read in from pred file
         if challenge not in ['2A']:
             pargs = pout + nssms[0]
-
+            printInfo("Verifying Pred")
             pout.append(verify(predfile, "prediction file for Challenge %s" % (challenge), valfunc, *pargs, mask=masks['samples']))
             if pout[-1] is None:
                 err_msgs.append("Unable to open prediction file")
@@ -1689,19 +1761,32 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, method='js_divergence'
         if challenge in ['2B']:
             printInfo('PRED DIMENSIONS -> ', pout[-1].shape)
 
-        if challenge not in ['2A']:
+        if challenge not in ['2A']: #change back
             if tout[-1] is None or pout[-1] is None:
                 return "NA"
 
-    # if challenge in ['3A'] and WRITE_3B_FILES:
-        # np.savetxt('pred3B.txt.gz', pout[-1])
-        # np.savetxt('truth3B.txt.gz', tout[-1])
+    if challenge in ['3A'] and WRITE_3A_FILES:
+        np.savetxt('pred3A.txt.gz', pout[1])
+        np.savetxt('truth3A.txt.gz', tout[1])
+
     if challenge not in ['2A']:
         printInfo('tout sum -> ', np.sum(tout[0]))
         printInfo('pout sum -> ', np.sum(pout[0]))
 
 
-    if challengeMapping[challenge]['filter_func']:
+    pred = np.zeros((1,1))
+    if challenge in ['3A'] and predvcf is not None:
+        pred_idx, true_idx  = readPredVcf(predvcf, vcf)
+        pred_1C = pout[1]
+        printInfo(pred.shape)
+        pred_1C = pred_1C[np.ix_(pred_idx, pred_idx)]
+        truth_1C = tout[1]        
+
+    if challenge in ['3A','3B'] and len(pout) == 3:
+        pred_1C = pout.pop()
+        truth_1C = tout.pop()
+
+    if challengeMapping[challenge]['filter_func'] :
         pout = [challengeMapping[challenge]['filter_func'](x, nssms[2]) for x in pout]
         printInfo('PRED DIMENSION(S) -> ', [p.shape for p in pout])
 
@@ -1713,9 +1798,9 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, method='js_divergence'
         printInfo('pout shape -> ', pout[0].shape)
 
         if challenge in ['2B']:
-            pout = [ add_pseudo_counts(*pout) ]
+            pout =  [add_pseudo_counts(*pout)] 
             mem('APC PRED')
-            printInfo('FINAL PRED DIMENSION -> ', pout[-1].shape)
+            printInfo('FINAL PRED DIMENSION -> ', pout[0].shape, pout[-1].shape)
 
         # if challenge in ['3A']:
             # tout[0] = np.dot(tout[0], tout[0].T)
@@ -1725,14 +1810,25 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, method='js_divergence'
     if challenge in ['2A']:
         return challengeMapping[challenge]['score_func'](*tpout, add_pseudo=True, pseudo_counts=None, rnd=rnd)
     if challenge in ['2B']:
-        return challengeMapping[challenge]['score_func'](*(pout + tout), rnd=rnd,method=method)
-    if challenge in ['3A']:
+        printInfo(len(pout), len(tout))
+        return challengeMapping[challenge]['score_func'](*(pout + tout), rnd=rnd,method=None)
+    if challenge in ['3A'] :
         pout[0] = np.dot(pout[0], pout[0].T)
         tout[0] = np.dot(tout[0], tout[0].T)
-        print "Method ", method
-        return challengeMapping[challenge]['score_func'](*(pout + tout), method=method)
-    if challenge in ['3B']:
-        return challengeMapping[challenge]['score_func'](*(pout + tout), method=method)
+        printInfo(tout[0].shape)
+        printInfo(pred.shape)
+        printInfo("Method ", method)
+        cF = -1
+        if predvcf is None and len(predfiles) < 3:
+            pred_1C = pout[1]
+            truth_1C = tout[1]               
+
+        score = challengeMapping[challenge]['score_func'](*(pout + tout), method='pearson')
+        return score
+
+    elif challenge in ['3B']:
+        score = challengeMapping[challenge]['score_func'](*(pout + tout),method='pearson')
+        return score
 
     return challengeMapping[challenge]['score_func'](*(pout + tout))
 
@@ -1786,6 +1882,7 @@ if __name__ == '__main__':
     parser.add_argument("--predfiles", nargs="+")
     parser.add_argument("--truthfiles", nargs="*")
     parser.add_argument("--vcf")
+    parser.add_argument("--predvcf")
     parser.add_argument("-o", "--outputfile")
     parser.add_argument('-v', action='store_true', default=False)
     parser.add_argument('--approx', nargs=2, type=float, metavar=('sample_fraction', 'iterations'), help='sample_fraction ex. [0.45, 0.8] | iterations ex. [4, 20, 100]')
@@ -1874,7 +1971,7 @@ if __name__ == '__main__':
         # REAL SCORE
         else:
             print('Running Challenge %s' % args.challenge)
-            res = scoreChallenge(args.challenge, args.predfiles, args.truthfiles, args.vcf, rnd=args.rnd[0],method=args.method)
+            res = scoreChallenge(args.challenge, args.predfiles, args.truthfiles, args.vcf, predvcf= args.predvcf, rnd=args.rnd[0],method=args.method)
             print res
             #print('SCORE -> %.16f' % res)
 
