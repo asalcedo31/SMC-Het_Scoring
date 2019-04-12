@@ -24,8 +24,8 @@ global err_msgs
 err_msgs = []
 
 #from metric.py import*
-
-INFO            = True
+ 
+INFO            = True  #set to true to print out various debugging output with printInfo
 TIME            = False
 MEM             = False
 FINAL_MEM       = False
@@ -1263,45 +1263,6 @@ def parseVCF2and3(data, sample_mask=None):
     # ]
     return [[vcf_lines], [true_lines], mask]
 
-def readPredVcf(pred,vcf):
-    printInfo("reading in VCFs")
-    p = open(pred)
-    v = open(vcf)
-
-    data = p.read()
-    data = data.split('\n')
-    data = [x for x in data if x != '']
-    data = [x for x in data if x[0] != '#']
-
-    p_sites = {}
-    for x in data:
-        p_sites[str(x.split('\t')[0])+"_"+ str(x.split('\t')[1])] = 1 
-
-    pred_idx = []
-    true_idx = []
-    
-    i = 0
-    for vcf_data in v:
-        
-        if (vcf_data == '' or vcf_data[0] == '#' ):
-            # i+=1
-            continue
-
-        vcf_data = vcf_data.rstrip("\n")
-        vcf_data = vcf_data.split('\t')
-        vcf_site = str(vcf_data[0])+"_"+ str(vcf_data[1])
-        if vcf_site in p_sites and vcf_data[len(vcf_data)-1] == "True":
-            pred_idx.append(i)
-
-        if vcf_data[len(vcf_data)-1] =="True":
-            true_idx.append(i)
-        i+=1
-    v.close()
-    print len(pred_idx)
-    print len(true_idx)
-    # return
-    return pred_idx, true_idx
-
 def filterFPs(x, mask):
     # EVERYTHING is done in memory
     #   1 - the elements at the indicies specified by mask are "picked" and assembled into a matrix
@@ -1647,16 +1608,11 @@ def verifyChallenge(challenge, predfiles, vcf):
     return "Valid"
 
  
-def scoreChallenge(challenge, predfiles, truthfiles, vcf, predvcf=None, method='js_divergence', sample_fraction=1.0, rnd=1e-50):
+def scoreChallenge(challenge, predfiles, truthfiles, vcf,  method='pearson', sample_fraction=1.0, rnd=1e-50):
     
     #global err_msgs
     mem('START %s' % challenge)
     masks = makeMasks(vcf, sample_fraction) if sample_fraction != 1.0 else { 'samples' : None, 'truths' : None}
-
-    if predvcf is not None and challenge in ['3A']:
-        challengeMapping[challenge]['val_funcs'].pop()
-        predfiles.pop()
-        truthfiles.pop()
 
     if challengeMapping[challenge]['vcf_func']:
         nssms = verify(vcf, "input VCF", challengeMapping[challenge]['vcf_func'], sample_mask=masks['samples'])
@@ -1698,7 +1654,7 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, predvcf=None, method='
                     #nssms[2] is an array of true ssms 
                     vout, raw = verify2A(predfile, truthfile, "Combined truth and pred file for Challenge 2A", *vcfargs, filter_mut=nssms[2], mask=masks['truths'], subchallenge="3A")
                     printInfo('length vout', vout.shape)
-                    printInfo('length raw', raw)
+                    printInfo('length raw', len(raw))
                 except SampleError as e:
                     raise e
 
@@ -1774,18 +1730,6 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, predvcf=None, method='
         printInfo('pout sum -> ', np.sum(pout[0]))
 
 
-    pred = np.zeros((1,1))
-    if challenge in ['3A'] and predvcf is not None:
-        pred_idx, true_idx  = readPredVcf(predvcf, vcf)
-        pred_1C = pout[1]
-        printInfo(pred.shape)
-        pred_1C = pred_1C[np.ix_(pred_idx, pred_idx)]
-        truth_1C = tout[1]        
-
-    if challenge in ['3A','3B'] and len(pout) == 3:
-        pred_1C = pout.pop()
-        truth_1C = tout.pop()
-
     if challengeMapping[challenge]['filter_func'] :
         pout = [challengeMapping[challenge]['filter_func'](x, nssms[2]) for x in pout]
         printInfo('PRED DIMENSION(S) -> ', [p.shape for p in pout])
@@ -1816,18 +1760,14 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf, predvcf=None, method='
         pout[0] = np.dot(pout[0], pout[0].T)
         tout[0] = np.dot(tout[0], tout[0].T)
         printInfo(tout[0].shape)
-        printInfo(pred.shape)
-        printInfo("Method ", method)
-        cF = -1
-        if predvcf is None and len(predfiles) < 3:
-            pred_1C = pout[1]
-            truth_1C = tout[1]               
+        
+        printInfo("Method ", method)  
 
-        score = challengeMapping[challenge]['score_func'](*(pout + tout), method='pearson')
+        score = challengeMapping[challenge]['score_func'](*(pout + tout), method=method)
         return score
 
     elif challenge in ['3B']:
-        score = challengeMapping[challenge]['score_func'](*(pout + tout),method='pearson')
+        score = challengeMapping[challenge]['score_func'](*(pout + tout),method=method)
         return score
 
     return challengeMapping[challenge]['score_func'](*(pout + tout))
@@ -1878,11 +1818,10 @@ if __name__ == '__main__':
     parser.add_argument("--pred-config", default=None)
     parser.add_argument("--truth-config", default=None)
     parser.add_argument("-c", "--challenge", default=None)
-    parser.add_argument("-m", "--method", default='js_divergence')
+    parser.add_argument("-m", "--method", default='pearson')
     parser.add_argument("--predfiles", nargs="+")
     parser.add_argument("--truthfiles", nargs="*")
     parser.add_argument("--vcf")
-    parser.add_argument("--predvcf")
     parser.add_argument("-o", "--outputfile")
     parser.add_argument('-v', action='store_true', default=False)
     parser.add_argument('--approx', nargs=2, type=float, metavar=('sample_fraction', 'iterations'), help='sample_fraction ex. [0.45, 0.8] | iterations ex. [4, 20, 100]')
@@ -1971,7 +1910,7 @@ if __name__ == '__main__':
         # REAL SCORE
         else:
             print('Running Challenge %s' % args.challenge)
-            res = scoreChallenge(args.challenge, args.predfiles, args.truthfiles, args.vcf, predvcf= args.predvcf, rnd=args.rnd[0],method=args.method)
+            res = scoreChallenge(args.challenge, args.predfiles, args.truthfiles, args.vcf,  rnd=args.rnd[0],method=args.method)
             print res
             #print('SCORE -> %.16f' % res)
 
