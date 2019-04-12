@@ -2,7 +2,7 @@ from SMCScoring import *
 import numpy as np
 import csv
 import pdb
-np.set_printoptions(threshold='nan')
+# np.set_printoptions(threshold='nan')
 
 def closest_rand_reassign(in_clusters,p_err=0.1):
     clusters = np.copy(in_clusters)

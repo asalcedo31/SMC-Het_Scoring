@@ -1,5 +1,5 @@
 import numpy as np;
-from make_ad_nvar import *
+# from make_ad_nvar import *
 from make_ccm import *
 import pprint
 import pandas as pd
@@ -1176,80 +1176,6 @@ def test_scenario(t,f,**kwargs):
 	print new_ad
 	print new_ccm
 
-
-# print "linear truth"
-# tree = linear_branching_truth()
-# # tree = linear_truth()
-# print tree.ad()
-# print tree.ccm()
-# print "mistake"
-# tree = collapse_all_clusters_and_extra(tree)
-# print tree.ad()
-# print tree.ccm()
-
-# print "branching truth"
-# tree = branching_test8()
-# tree.standard_node_naming()
-# tree_df = tree.tree_struct(uniform=True, plot_labels = True, tier=True)
-
-# n2 = tree.get_node('N2')
-# n2.gather_desc_nodes()
-# print n2.desc
-
-# tree.switch_parent('N6','N3')
-# tree.standard_node_naming()
-# tree_df = tree.tree_struct(uniform=True, plot_labels = True, tier=True)
-
-# n2 = tree.get_node('N2')
-# n2.gather_desc_nodes()
-# print n2.desc
-
-
-# tree = branching_test8()
-# tree.standard_node_naming()
-# # tree.uniform_node_naming()
-# tree_df = tree.tree_struct(uniform=True, plot_labels = True, tier=True)
-# print tree_df
-# # print tree.tiers
-# # tree.gather_tiered_nodes()
-# tier_three = tree.get_tier(3)
-
-
-
-# map(lambda x: pprint.pprint(x.name) ,tier_three)
-# pprint.pprint(tree.node_tiers)
-# pprint.pprint(tier_three)
-
-# tree.uniform_node_naming()
-# tree_df = tree.tree_struct(plot_labels = True,uniform=True)
-# print tree_df
-
-# print tree.ad()
-# print tree.ccm()
-# print "mistake"
-# tree = branching_to_linear(tree)
-# print tree.ad()
-# print tree.ccm()
-
-
-
-
-# tree = make_truth()
-# ncluster_correct_lineage()
-# split(name_split='N2', name_new='N7',same=False)
-# merge_clusters('N3','N6')
-# baseline_ad('OneCluster', print_ad=False, print_ccm=True)
-# tree = extra_cluster(parent_name=None)
-# tree = switch_parent_cluster('N5','N6')
-# print tree.ad()
-# print tree.ccm()
-# matches('NClusterCorrectLineage', ncluster_correct_lineage, [], [])
-# tree = one_cluster(16)
-# print tree.ad()
-# print tree.ccm()
-# baseline_ad('Truth', print_ccm=True)
-# collapse_node('N2')
-# test_all()
 
 
 
