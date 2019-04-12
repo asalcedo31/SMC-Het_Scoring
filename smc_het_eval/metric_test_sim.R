@@ -509,8 +509,9 @@ read.sim <- function(C.values = 4:5,
                         			            '_ku=', k.u,
                             			        '_kn=', k.n,
                            				        '_e1=', e1,
-                                				'_e2=', e2, '.tsv', sep=""), header=T)
-										;
+                                				'_e2=', e2, '.tsv', sep=""), header=T);
+                         # browser();
+                         sim.res.tot$X2A_metric <- apply(sim.res.tot, 1, function(x) mean(c(x[1], x[3])))
 										return(apply(data.frame(sim.res.tot), 2, function(x) return(c(mean(x)))))})
 									names(res4) <- e2.values
                                       res4
@@ -1830,7 +1831,7 @@ plot.sim <- function(res, params.fixed.values,param.interest, metrics=NA, key.x=
     label = 'Number of clusters'
   }
   if(param.name=='epsilon1'){
-    label=expression(epsilon[1])
+    label=expression(bold(epsilon[1]))
     
   }
   if(param.name=='epsilon1' | param.name=='epsilon2'){
@@ -1843,8 +1844,10 @@ plot.sim <- function(res, params.fixed.values,param.interest, metrics=NA, key.x=
       }
     }
   }
-  if(param.name=='epsilon2'){
-    label=expression(epsilon[2])
+  if(param.name=='epsilon2' | param.name=='epsilon1'){
+    # label=expression(bold("\u254"))
+    label=expression(bold(" "[2]))
+    # label=bquote(bold(epsilon))
   }
   print(xat)
   print(plot.formula)
@@ -1864,13 +1867,14 @@ plot.sim <- function(res, params.fixed.values,param.interest, metrics=NA, key.x=
                      abline.h = c(0,1),
                      abline.col = 'grey',
                      xlab.label = label,
-                     top.padding=0,
-                     bottom.padding=0,
-                     left.padding=0,
-                     right.padding=0,
+                     top.padding = 0,
+                     bottom.padding = 0,
+                     left.padding = 0,
+                     right.padding = 0,
+                     ylab.axis.padding = 0.2,
                      ylab.label = ylab,
-                     yaxis.tck=c(1,0),
-                     xaxis.tck=c(1,0),
+                     yaxis.tck = c(1,0),
+                     xaxis.tck = c(1,0),
                      xaxis.cex = 0.6,
                      yaxis.cex = 0.6,
                      xaxis.rot = xrot,
@@ -1879,6 +1883,7 @@ plot.sim <- function(res, params.fixed.values,param.interest, metrics=NA, key.x=
                      abline.v = abline.v,
                      xat=xat,
                      resolution=200,
+                     use.legacy.settings = TRUE,
                      y.error.up = plot.data$se/2,
                      y.error.bar.col = p.colours,
                      error.bar.length=0.05,
@@ -2118,8 +2123,8 @@ plot.properties.heatmap <- function(res.p1=NULL, res.p2=NULL, res.p3=NULL, res.p
     yaxis.cex =0.6,
     left.padding=2,
     at=seq(0,1,0.001),
-    colourkey.labels.at=c(0,1),
-    colourkey.labels =c(0,1),
+    colourkey.labels.at=c(0,0.5,1),
+    colourkey.labels =c(0,0.5, 1),
     colour.centering.value=0.5,
     colour.scheme = c('white',col),
     colourkey.cex =0.6,
