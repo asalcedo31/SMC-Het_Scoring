@@ -13,12 +13,13 @@ import gc
 import pprint as pprint
 import traceback
 import pdb
-
+import copy as copy
 # blo
 import time
 import resource
 import os
 import gzip
+import sklearn.metrics as mt
 
 global err_msgs
 err_msgs = []
@@ -189,6 +190,7 @@ def calculate_scaled1C(pred, truth, err='abs'):
     pred.sort(key = lambda x: x[1])
     truth.sort(key = lambda x: x[1])
     truth = truth[1:]
+
     predvs = compute_scaled_sc(pred)
     truthvs = compute_scaled_sc(truth)
     # calculate the score using the given error penalty
@@ -212,11 +214,14 @@ def compute_scaled_sc(sc):
                 out[i] = sc[ind][1]
             except IndexError:
                 raise
+    
     return out
  
 def calculate1C(pred, truth, err='abs'):
     orig = calculate_original1C(pred,truth,err)
     scaled = calculate_scaled1C(pred, truth, err)
+    print "orig", orig
+    print "scaled", scaled
     return max(orig,scaled)
 
 def clonalFraction(pred, truth):
@@ -251,7 +256,8 @@ def clonalFractionSim(pred, truth):
     cf_score = max(0,1-(abs(pred_cf-truth_cf)/truth_cf))
     return cf_score
 
-def validate2A(data, nssms, return_ccm=True, mask=None):
+
+def validate2A(data, nssms, return_ccm=True, mask=None, adjusted_idx=None):
     # validate2A only fails input if..
     #   - length(file) != length(mask)
     #   - if an entry in file can't be cast to int
@@ -261,17 +267,22 @@ def validate2A(data, nssms, return_ccm=True, mask=None):
 
     # apply mask if it exists
     data = [x for i, x in enumerate(data) if i in mask] if mask else data
-
-    if len(data) != nssms:
-        raise ValidationError("Input file contains a different number of lines than the specification file. Input: %s lines Specification: %s lines" % (len(data), nssms))
+    
     cluster_entries = set()
     # make a set of all entries in truth file
     for i in xrange(len(data)):
         try:
             data[i] = int(data[i])
-            cluster_entries.add(data[i])
         except ValueError:
             raise ValidationError("Cluster ID in line %d (ssm %s) can not be cast as an integer" % (i + 1, data[i][0]))
+
+    if len(data) != nssms and adjusted_idx is not None:
+        data = pad2A(data, adjusted_idx)
+
+    if len(data) != nssms:
+        raise ValidationError("Input file contains a different number of lines than the specification file. Input: %s lines Specification: %s lines" % (len(data), nssms))
+
+    cluster_entries = set(data)
     used_clusters = sorted(list(cluster_entries))
     # expect the set to be equal to seq(1, len(set), 1)
     expected_clusters = range(1, len(cluster_entries) + 1)
@@ -305,27 +316,45 @@ def validate2Afor3A(data, nssms, mask=None):
     # mask works for free!
     return validate2A(data, nssms, return_ccm=False, mask=mask)
 
-def validate2B(filename, nssms, mask=None):
-  
-    ccm = np.zeros((nssms, nssms))
+def pad2B( gzipfile,  adjusted_idx, mask= None):
+
+    adjusted_idx = np.asarray(adjusted_idx)
+    pos = np.argwhere(adjusted_idx > -1).ravel()
+    pad = np.argwhere(adjusted_idx == -1).ravel()
+    
+    ccm = np.ones((adjusted_idx.shape[0],adjusted_idx.shape[0]))
+    idx_pos = pos.reshape(pos.shape[0],1)
+    idx_pad = pad.reshape(pad.shape[0],1)
+    #all false negatives in their own cluster
+    ccm[idx_pad, idx_pos.T]=0
+    ccm[idx_pos, idx_pad.T]=0
+    
+    for i, line in enumerate(gzipfile):
+        if mask == None:
+            #mask not ready yet
+            if(i in adjusted_idx):
+                line = np.fromstring(line, sep='\t')
+                ccm[np.argwhere(adjusted_idx == i)[0,0],].put(pos, line)
+    return ccm
+
+def validate2B(filename, nssms, mask=None, adjusted_idx=None):  
     try:
         if os.path.exists(filename):
-            
             if is_gzip(filename):
                 gzipfile = gzip.open(str(filename), 'r')
             else:
                 gzipfile = open(str(filename), 'r')
-            ccm_i = 0
-            for i, line in enumerate(gzipfile):
-                if mask == None:
-                    ccm[i, ] = np.fromstring(line, sep='\t')
-                    #print str(i) + " T" #debug
-                elif i in mask:
-                    #print "mask" #debug
-                    #print str(ccm_i) + " S" #debug
-                    matrix_line = line.split(' ')
-                    ccm[ccm_i, ] = [x for i, x in enumerate(matrix_line) if i in mask]
-                    ccm_i += 1
+            ccm = np.zeros((nssms, nssms))
+            if( adjusted_idx is not None):
+                ccm = pad2B(gzipfile,  adjusted_idx, mask)                
+            else:            
+                ccm = np.zeros((nssms, nssms))
+                for i, line in enumerate(gzipfile):
+                    if mask == None:
+                        ccm[i, ] = np.fromstring(line, sep='\t')
+                    elif i in mask:    
+                        matrix_line = line.split(' ')
+                        ccm[i, ] = [x for i, x in enumerate(matrix_line) if i in mask]
             gzipfile.close()
             #print "done load " + filename #debug
         else:
@@ -335,7 +364,10 @@ def validate2B(filename, nssms, mask=None):
             ccm[:nssms, :nssms] = truth_ccm
     except ValueError as e:
         raise ValidationError("Entry in co-clustering matrix could not be cast as a float. Error message: %s" % e.message)
-
+    
+    # pdb.set_trace()
+    # if ccm.shape != (nssms, nssms) and adjusted_idx is not None:
+    #     ccm = pad2B(ccm, adjusted_idx)
     if ccm.shape != (nssms, nssms):
         raise ValidationError("Shape of co-clustering matrix %s is wrong.  Should be %s" % (str(ccm.shape), str((nssms, nssms))))
     if not np.allclose(ccm.diagonal(), np.ones((nssms))):
@@ -753,7 +785,6 @@ def calculate2_aupr(pred, truth, full_matrix=True, rnd=1e-50):
         inds = np.triu_indices(n, k=1)
         pred_cp = pred[inds]
         truth_cp = truth[inds]
-    import sklearn.metrics as mt
     precision, recall, thresholds = mt.precision_recall_curve(truth_cp, pred_cp,pos_label=1)
     
     if (not full_matrix):
@@ -890,7 +921,6 @@ def validate3A(data, cas, nssms, mask=None):
 
     # Form AD matrix
     printInfo("Building AD matrix")
-    pprint.pprint(parents)
     n = len(cluster_assignments)
     # can use int8 because only 0 and 1 integers
     ad = np.zeros((n, n), dtype=np.int8)
@@ -1238,6 +1268,86 @@ def parseVCF1C(data, sample_mask=None):
         raise ValidationError("Input VCF contains no SSMs")
     return [[len(data)], [len(data)]]
 
+def sort_idx(idx):
+    idx = sorted(idx, key=lambda x: int(x.split('_')[1  ]))
+    idx = sorted(idx, key=lambda i: int(i.split('_')[0]))
+    return idx
+
+
+def sort_perfect(idx, dic):
+    idx = sorted(idx, key=lambda x: dic[x]['perfect_idx'])
+    return idx
+
+
+
+def parseVCF2and3Perfect(obs_vcf,perfect_vcf,sample_mask=None):
+    perfect_dic = {}
+    obs_dic = {}
+    vcf_list = [[perfect_vcf, perfect_dic],[obs_vcf,obs_dic]]
+    #sample mask used for downsampling SNVs    
+    masked_sites = set()
+    #mask for false positives
+    mask = list()
+
+    #create a dictionary for both the observed and perfect matching indices with positions
+    for j,vcfs in enumerate(vcf_list):
+        file,dic = vcfs
+        f = open(file)
+        data = f.read()
+        f.close()
+        data = data.split('\n')
+        data = [x for x in data if x != '']
+        data = [x for x in data if x[0] != '#']
+        
+        for i,line_str in enumerate(data):
+            line = line_str.split('\t')
+            idx = line[0]+"_"+line[1] 
+            if (sample_mask and j == 0):
+                if i in sample_mask:
+                    masked_sites.add(idx)
+                    next 
+            if idx not in masked_sites:
+                dic[idx] = {'idx':i,'perfect_idx':-1, 'vcf_line':line_str,'type':'tp'}
+                #mark false positives
+                if line[-1] == 'False':
+                    dic[idx]['type'] = 'fp'
+                if j == 0:
+                    dic[idx]['perfect_idx'] = i
+
+    perfect_idx = set(perfect_dic.keys())
+    obs_idx = set(obs_dic.keys())
+    fn_idx = list(perfect_idx.difference(obs_idx))
+    perfect_idx = sort_idx(list(perfect_idx))  
+
+    #Update the observed dictionary to include all of th sites in the perfect and update the indicies for all of the sites
+    for i,idx in enumerate(sort_idx(perfect_dic.keys())):
+        site_type = perfect_dic[idx]['type']
+        if(idx in obs_dic.keys()):
+            rec = obs_dic[idx]            
+            rec['perfect_idx'] = i
+            rec['type'] = site_type
+        else:
+            obs_dic[idx] = {'idx':-1,'perfect_idx':i, 'vcf_line': perfect_dic[idx]['vcf_line'],'type':'fn' if site_type == 'tp' else site_type}
+
+    mask = []
+    adjusted_idx = []
+
+    #put all the union of indices in an array. -1 indicates FN
+    for i,idx in enumerate(sort_idx(obs_dic.keys())):
+        adjusted_idx.append(obs_dic[idx]['idx'])
+        if obs_dic[idx]['type'] != 'fp' and idx in perfect_idx:
+            mask.append(i)
+
+    nssm_true = len(mask)
+    nssm_all = len(obs_dic)
+    
+    # with open("new_dic.vcf", "w") as handle:
+    #     for i,idx in enumerate(sort_idx(obs_dic.keys())):
+    #         if obs_dic[idx]['type'] in ['fn','fp']:
+    #             handle.write(obs_dic[idx]['type'] + ": " + obs_dic[idx]['vcf_line']+"\n")
+
+    return [[nssm_all], [nssm_true], mask, adjusted_idx, obs_dic]
+
 def parseVCF2and3(data, sample_mask=None):
 
     data = data.split('\n')
@@ -1430,19 +1540,16 @@ def verify(filename, role, func, *args, **kwargs):
     t_start = time.time()
     
     try:
-        if func.__name__ in ['validate2B','validate3B']:
-            verified = func(filename,*args, **kwargs)
-        elif is_gzip(filename): #pass compressed files directly to 2B or 3B validate functions
-            verified = func(filename, *args, **kwargs)
+        if func.__name__ in ['validate2B','validate3B'] or is_gzip(filename):
+            verified = func(filename,*args, **kwargs)        
         elif func.__name__ in ['validate1C_lax']:
              f = open(filename)
              data = f.read()
              f.close()
-             verified = func(data)
-        #if is_gzip(filename):
-        #    verified = func(filename, *args, **kwargs)
+             verified = func(data)        
         else:
             # really shouldn't do read() here, stores the whole thing in memory when we could read it in chunks/lines
+
             f = open(filename)
             data = f.read()
             f.close()
@@ -1460,17 +1567,19 @@ def verify(filename, role, func, *args, **kwargs):
     #print (filename +  "  " + str(t_end - t_start)) #debug
     return verified
 
-def verify2A(filename_pred, filename_truth, role, pred_size, truth_size, filter_mut=None, mask=None, subchallenge="2A"):
+def verify2A(filename_pred, filename_truth, role, pred_size, truth_size, **kwargs):
+# def verify2A(filename_pred, filename_truth, role, pred_size, truth_size, filter_mut=None, mask=None, subchallenge="2A"):
     try:
         f = open(filename_pred)
         data1 = f.read()
         f = open(filename_truth)
         data2 = f.read()
         f.close()
-        if subchallenge is "3A":
-            verified, raw = om_validate2A(data1, data2, pred_size, truth_size, filter_mut=filter_mut, mask=mask, subchallenge=subchallenge)
+        if kwargs['subchallenge'] is "3A":
+            verified, raw = om_validate2A(data1, data2, pred_size, truth_size, **kwargs)
+            # verified, raw = om_validate2A(data1, data2, pred_size, truth_size, filter_mut=filter_mut, mask=mask, subchallenge=subchallenge)
             return verified, raw
-        verified = om_validate2A(data1, data2, pred_size, truth_size, filter_mut=filter_mut, mask=mask, subchallenge=subchallenge)
+        verified = om_validate2A(data1, data2, pred_size, truth_size, **kwargs)
     except (IOError, TypeError) as e:
         traceback.print_exc()
         err_msgs.append("Error opening %s, from function new_validate2A using file %s and %s in" %  (role, filename_pred, filename_truth))
@@ -1554,6 +1663,7 @@ challengeMapping = {
     },
     # According to Quaid, there is no need to filter false positves with the new method developed for scoring subchallenge 2A
     '2A' : {
+        # 'val_funcs' : [validate2A],
         'val_funcs' : [om_validate2A],
         'score_func' : om_calculate2A,
         'vcf_func' : parseVCF2and3,
@@ -1608,19 +1718,28 @@ def verifyChallenge(challenge, predfiles, vcf):
     return "Valid"
 
  
-def scoreChallenge(challenge, predfiles, truthfiles, vcf,  method='pearson', sample_fraction=1.0, rnd=1e-50):
+def scoreChallenge(challenge, predfiles, truthfiles, vcf, perfect_vcf=None, method='pearson', sample_fraction=1.0, rnd=1e-50):
     
     #global err_msgs
     mem('START %s' % challenge)
-    masks = makeMasks(vcf, sample_fraction) if sample_fraction != 1.0 else { 'samples' : None, 'truths' : None}
-
-    if challengeMapping[challenge]['vcf_func']:
-        nssms = verify(vcf, "input VCF", challengeMapping[challenge]['vcf_func'], sample_mask=masks['samples'])
-        if nssms == None:
-            err_msgs.append("Could not read input VCF. Exiting")
-            return "NA"
+    adjusted_idx = None
+    if(perfect_vcf is not None):
+        masks = makeMasks(perfect_vcf, sample_fraction) if sample_fraction != 1.0 else { 'samples' : None, 'truths' : None}
+        nssms = parseVCF2and3Perfect(vcf, perfect_vcf, masks['samples'])
+        mask = nssms[2]
+        adjusted_idx = nssms[3]
+        obs_dic = nssms[4]
+        nssms = nssms[0:3]
+        # print(nssms)
     else:
-        nssms = [[], []]
+        masks = makeMasks(vcf, sample_fraction) if sample_fraction != 1.0 else { 'samples' : None, 'truths' : None}
+        if challengeMapping[challenge]['vcf_func']:
+            nssms = verify(vcf, "input VCF", challengeMapping[challenge]['vcf_func'], sample_mask=masks['samples'])
+            if nssms == None:
+                err_msgs.append("Could not read input VCF. Exiting")
+                return "NA"
+        else:
+            nssms = [[], []]
 
     mem('VERIFY VCF %s' % vcf)
     
@@ -1647,12 +1766,13 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf,  method='pearson', sam
         targs = tout + nssms[1]
 
         vcfargs = tpout + nssms[0] + nssms[1]
+
         # an overlapping matrix is created for challenge 2A
         if challenge in ['2A']:
             if valfunc is om_validate2A:
                 try:
                     #nssms[2] is an array of true ssms 
-                    vout, raw = verify2A(predfile, truthfile, "Combined truth and pred file for Challenge 2A", *vcfargs, filter_mut=nssms[2], mask=masks['truths'], subchallenge="3A")
+                    vout, raw = verify2A(predfile, truthfile, "Combined truth and pred file for Challenge 2A", *vcfargs, filter_mut=nssms[2], mask=masks['truths'], subchallenge="3A", adjusted_idx=adjusted_idx)
                     printInfo('length vout', vout.shape)
                     printInfo('length raw', len(raw))
                 except SampleError as e:
@@ -1708,7 +1828,10 @@ def scoreChallenge(challenge, predfiles, truthfiles, vcf,  method='pearson', sam
         if challenge not in ['2A']:
             pargs = pout + nssms[0]
             printInfo("Verifying Pred")
-            pout.append(verify(predfile, "prediction file for Challenge %s" % (challenge), valfunc, *pargs, mask=masks['samples']))
+            if challenge  in ['2B']:
+                pout.append(verify(predfile, "prediction file for Challenge %s" % (challenge), valfunc, *pargs, mask=masks['samples'], adjusted_idx=adjusted_idx))
+            else:
+                pout.append(verify(predfile, "prediction file for Challenge %s" % (challenge), valfunc, *pargs, mask=masks['samples']))
             if pout[-1] is None:
                 err_msgs.append("Unable to open prediction file")
                 return "NA"
@@ -1822,6 +1945,7 @@ if __name__ == '__main__':
     parser.add_argument("--predfiles", nargs="+")
     parser.add_argument("--truthfiles", nargs="*")
     parser.add_argument("--vcf")
+    parser.add_argument("--perfect_vcf", default=None)
     parser.add_argument("-o", "--outputfile")
     parser.add_argument('-v', action='store_true', default=False)
     parser.add_argument('--approx', nargs=2, type=float, metavar=('sample_fraction', 'iterations'), help='sample_fraction ex. [0.45, 0.8] | iterations ex. [4, 20, 100]')
@@ -1910,7 +2034,7 @@ if __name__ == '__main__':
         # REAL SCORE
         else:
             print('Running Challenge %s' % args.challenge)
-            res = scoreChallenge(args.challenge, args.predfiles, args.truthfiles, args.vcf,  rnd=args.rnd[0],method=args.method)
+            res = scoreChallenge(args.challenge, args.predfiles, args.truthfiles, args.vcf, perfect_vcf=args.perfect_vcf, rnd=args.rnd[0],method=args.method)
             print res
             #print('SCORE -> %.16f' % res)
 

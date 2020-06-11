@@ -1,11 +1,70 @@
 import numpy as np
 from permutations import*
- 
 import gc
 import random
 import pdb
+import pprint as pprint
 
-def om_validate2A (pred_data, truth_data, nssms_x, nssms_y, filter_mut=None, mask=None, subchallenge="2A"):
+class ValidationError(Exception):
+    def __init__(self, value):
+        self.value = value
+        print('VALIDATION ERROR: %s' % value)
+    def __str__(self):
+        return repr(self.value)
+
+class SampleError(Exception):
+    def __init__(self, value):
+        self.value = value
+    def __str__(self):
+        return repr(self.value)
+
+def pad2A(data, adjusted_idx):    
+    new_cluster = max(data)+1
+    [data.insert(i, new_cluster) for i in range(len(adjusted_idx)) if adjusted_idx[i] < 0]
+    print "new cluster: " + str(new_cluster)
+    return data
+
+def process_2A(data, nssms, mask=None, adjusted_idx=None):
+    
+    if type(data) is str:
+        data = data.split('\n')
+    data = filter(None, data)
+
+    # apply mask if it exists
+    data = [x for i, x in enumerate(data) if i in mask] if mask else data
+    
+    cluster_entries = set()
+    # make a set of all entries in truth file
+    for i in xrange(len(data)):
+        try:
+            data[i] = int(data[i])
+        except ValueError:
+            raise ValidationError("Cluster ID in line %d (ssm %s) can not be cast as an integer" % (i + 1, data[i][0]))
+
+    if len(data) != nssms and adjusted_idx is not None:
+        data = pad2A(data, adjusted_idx)
+
+    if len(data) != nssms:
+        raise ValidationError("Input file contains a different number of lines than the specification file. Input: %s lines Specification: %s lines" % (len(data), nssms))
+
+    cluster_entries = set(data)
+    used_clusters = sorted(list(cluster_entries))
+    # expect the set to be equal to seq(1, len(set), 1)
+    expected_clusters = range(1, len(cluster_entries) + 1)
+
+    # # only raise ValidationError if the clusters are not equal AND no mask is used
+    if used_clusters != expected_clusters and not mask:
+        raise ValidationError("Cluster IDs used (%s) is not what is expected (%s)" % (str(used_clusters), str(expected_clusters)))
+
+    # raise a SampleError if the clusters are not equal AND a mask is being used
+    # the mask could be selecting rows that don't end up giving the complete cluster
+    # raise the error, and trigger a re-sample
+    if used_clusters != expected_clusters and mask != None:
+        raise SampleError('Sampling gave incomplete clusters: expected (%s) and got (%s)' % (str(expected_clusters), str(used_clusters)))
+
+    return data, cluster_entries
+
+def om_validate2A (pred_data, truth_data, nssms_x, nssms_y, filter_mut=None, mask=None, subchallenge="2A", adjusted_idx=None):
     '''
     Creates overlapping matrix for SubChallenge 2 and 3
     :param pred_data: inputed data from prediction file
@@ -16,46 +75,17 @@ def om_validate2A (pred_data, truth_data, nssms_x, nssms_y, filter_mut=None, mas
     :subchallenge: subchallenge scored
     :return: overlapping matrix and (for subchallenge 3) a list which specifies the cluster of each mutation
     '''
-  #  print("omvalidate2A")
 
-    if type(pred_data) is str:
-        pred_data = pred_data.split('\n')
-    pred_data = filter(None, pred_data)
-    pred_data = [x for i, x in enumerate(pred_data) if i in mask] if mask else pred_data
-     
-    if len(pred_data) != nssms_x:
-        raise ValidationError("Prediction file contains a different number of lines than the specification file. Input: %s lines. Specification: %s lines" % (len(pred_data), nssms_x))
-    pred_cluster_entries = set()
-
-    for i in xrange(len(pred_data)):
-        try:
-            pred_data[i] = int(pred_data[i])
-            pred_cluster_entries.add(pred_data[i])
-        except ValueError:
-            raise ValidationError("Cluster ID in line %d (ssm %s) can not be cast to an int", (i+1, pred_data[i][0]))
-    #pdb.set_trace()
+    pred_data, pred_cluster_entries = process_2A(pred_data, nssms_x, mask, adjusted_idx)
+    truth_data, truth_cluster_entries = process_2A(truth_data, nssms_y, mask, adjusted_idx)
+    
     num_pred_clusters = max(pred_cluster_entries)
 
-    if type(truth_data) is str:
-        truth_data = truth_data.split('\n')
-    truth_data = filter(None, truth_data)
-    truth_data = [x for i, x in enumerate(truth_data) if i in mask] if mask else truth_data
-
-    if len(truth_data) != nssms_y:
-        raise ValidationError("Truth file contains a different number of lines than the specification file. Input: %s lines. Specification: %s lines" % (len(truth_data), nssms_y))
-
-    truth_cluster_entries = set()
-    for i in xrange(len(truth_data)):
-        try:
-            truth_data[i] = int(truth_data[i])
-            truth_cluster_entries.add(truth_data[i])
-        except ValueError:
-            raise ValidationError("Cluster ID in line %d (ssm %s) can not be cast to an int", (i+1, truth_data[i][0]))
-
+    
     num_truth_clusters = max(truth_cluster_entries)
     om = np.zeros((num_truth_clusters, num_pred_clusters), dtype=int)
 
-   # print len(filter_mut)
+
     new_pred_data = []
     if filter_mut is not None:
         for i in range(len(pred_data)):     
@@ -64,14 +94,13 @@ def om_validate2A (pred_data, truth_data, nssms_x, nssms_y, filter_mut=None, mas
     else:
         new_pred_data = pred_data
 
+    count_dic = { i:new_pred_data.count(i) for i in new_pred_data}
+    pprint.pprint(count_dic)
     for i in range(len(new_pred_data)):
-        # print(new_pred_data[i]), 
         om[truth_data[i]-1, new_pred_data[i]-1] += 1
-  #  print("om shape", om)
+
     if subchallenge is "3A":
         return om, truth_data
-
-    
     return om
 
 def om_calculate2A(om, full_matrix=True, method='default', add_pseudo=True, pseudo_counts=None, rnd=1e-50):
@@ -123,10 +152,11 @@ def om_calculate2A(om, full_matrix=True, method='default', add_pseudo=True, pseu
                 scores.append(func_dict[m](tp, fp, tn, fn, full_matrix=full_matrix, rnd=rnd))
         
             # normalize the scores to be between (worst of OneCluster and NCluster scores) and (Truth score)
+        print "scores raw:", scores
         for m in functions:
             gc.collect()
             worst_scores.append(get_worst_score_om(om, func_dict[m], larger_is_worse=(m in larger_is_worse_methods), rnd=rnd))
-        
+        print worst_scores
         for i, m in enumerate(functions):
             if m in larger_is_worse_methods:
                 scores[i] = set_to_zero(1 - (scores[i] / worst_scores[i]))
